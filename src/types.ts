@@ -30,6 +30,7 @@ export interface Product {
   isCampaign: boolean;
   isNew: boolean;
   isHidden?: boolean;
+  isArchived?: boolean;
   stockStatus: string;
   materials: string[];
   keyFeatures: string[];

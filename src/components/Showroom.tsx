@@ -29,32 +29,36 @@ export const Showroom: React.FC<ShowroomProps> = ({
 
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
-      if (item.isHidden) return false;
+      if (item.isHidden === true) return false;
 
       // Main Category Match
-      if (
-        selectedMainCategory &&
-        item.category.toLowerCase() !== selectedMainCategory.toLowerCase()
-      ) {
-        return false;
+      if (selectedMainCategory) {
+        const itemCat = (item.category || '').trim().toLocaleLowerCase('tr-TR');
+        const selCat = selectedMainCategory.trim().toLocaleLowerCase('tr-TR');
+        if (itemCat !== selCat) {
+          return false;
+        }
       }
 
       // Sub Category Match
-      if (
-        selectedSubCategory &&
-        item.subCategory?.toLowerCase() !== selectedSubCategory.toLowerCase()
-      ) {
-        return false;
+      if (selectedSubCategory) {
+        const itemSub = (item.subCategory || '').trim().toLocaleLowerCase('tr-TR');
+        const selSub = selectedSubCategory.trim().toLocaleLowerCase('tr-TR');
+        if (itemSub !== selSub) {
+          return false;
+        }
       }
 
       // Search Query Match
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const inName = item.name.toLowerCase().includes(q);
-        const inCategory = item.category.toLowerCase().includes(q);
-        const inSubCategory = item.subCategory?.toLowerCase().includes(q) || false;
-        const inDesc = item.description.toLowerCase().includes(q);
-        const inMaterials = (item.materials || []).some((m) => m.toLowerCase().includes(q));
+        const q = searchQuery.toLocaleLowerCase('tr-TR').trim();
+        const inName = (item.name || '').toLocaleLowerCase('tr-TR').includes(q);
+        const inCategory = (item.category || '').toLocaleLowerCase('tr-TR').includes(q);
+        const inSubCategory = (item.subCategory || '').toLocaleLowerCase('tr-TR').includes(q);
+        const inDesc = (item.description || '').toLocaleLowerCase('tr-TR').includes(q);
+        const inMaterials = (item.materials || []).some((m) =>
+          m.toLocaleLowerCase('tr-TR').includes(q)
+        );
 
         if (!inName && !inCategory && !inSubCategory && !inDesc && !inMaterials) {
           return false;

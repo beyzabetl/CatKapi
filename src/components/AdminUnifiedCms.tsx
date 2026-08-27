@@ -252,6 +252,8 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
       images: ['https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800'],
       coverImageIndex: 0,
       specs: { 'Stok Durumu': 'Sipariş Üzerine Üretiliyor' },
+      isHidden: false,
+      isArchived: false,
     };
     setIsCreatingNewProduct(true);
     setSelectedProductId(newProduct.id);
@@ -766,20 +768,24 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchName = p.name.toLowerCase().includes(q);
-        const matchCat = p.category?.toLowerCase().includes(q);
-        const matchSub = p.subCategory?.toLowerCase().includes(q);
-        const matchId = p.id.toLowerCase().includes(q);
+        const q = searchQuery.toLocaleLowerCase('tr-TR').trim();
+        const matchName = (p.name || '').toLocaleLowerCase('tr-TR').includes(q);
+        const matchCat = (p.category || '').toLocaleLowerCase('tr-TR').includes(q);
+        const matchSub = (p.subCategory || '').toLocaleLowerCase('tr-TR').includes(q);
+        const matchId = (p.id || '').toLocaleLowerCase('tr-TR').includes(q);
         if (!matchName && !matchCat && !matchSub && !matchId) return false;
       }
 
       if (selectedCategoryFilter) {
-        if (p.category !== selectedCategoryFilter) return false;
+        const pCat = (p.category || '').trim().toLocaleLowerCase('tr-TR');
+        const fCat = selectedCategoryFilter.trim().toLocaleLowerCase('tr-TR');
+        if (pCat !== fCat) return false;
       }
 
       if (selectedSubCategoryFilter) {
-        if (p.subCategory !== selectedSubCategoryFilter) return false;
+        const pSub = (p.subCategory || '').trim().toLocaleLowerCase('tr-TR');
+        const fSub = selectedSubCategoryFilter.trim().toLocaleLowerCase('tr-TR');
+        if (pSub !== fSub) return false;
       }
 
       return true;
