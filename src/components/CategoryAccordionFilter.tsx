@@ -30,14 +30,8 @@ export const CategoryAccordionFilter: React.FC<CategoryAccordionFilterProps> = (
   setCategorySearchQuery,
   onClearFilters,
 }) => {
-  // Store set of open category IDs
-  const [openCategoryIds, setOpenCategoryIds] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    if (categories.length > 0) {
-      initial[categories[0].id] = true; // First category open by default
-    }
-    return initial;
-  });
+  // Store set of open category IDs (all closed by default)
+  const [openCategoryIds, setOpenCategoryIds] = useState<Record<string, boolean>>({});
 
   const toggleCategory = (catId: string) => {
     setOpenCategoryIds((prev) => ({

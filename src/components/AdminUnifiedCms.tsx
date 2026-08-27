@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Layers,
   Sparkles,
@@ -53,6 +53,7 @@ import {
   ContactCardIconType,
   HeroSlide,
   QualityPrinciple,
+  SocialLink,
 } from '../types';
 import { MediaGalleryUploader } from './MediaGalleryUploader';
 
@@ -99,14 +100,8 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [selectedSubCategoryFilter, setSelectedSubCategoryFilter] = useState<string | null>(null);
 
-  // Expanded Categories in Tree
-  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    categories.forEach((c) => {
-      init[c.id] = true;
-    });
-    return init;
-  });
+  // Expanded Categories in Tree (all closed by default)
+  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({});
 
   // Editing / Active Product in Right Panel
   const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
@@ -134,7 +129,33 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   // Site Settings Temp State
   const [tempSettings, setTempSettings] = useState<SiteSettings>({ ...siteSettings });
 
-  // Contact / Social info rows (synced with tempSettings)
+  // Contact / Social info rows (synced with tempSettings and siteSettings)
+  const buildInitialContactRows = (settings: SiteSettings) => {
+    // If we already have socialLinks saved, build from them
+    if (settings?.socialLinks && settings.socialLinks.length > 0) {
+      return settings.socialLinks.map((s, idx) => ({
+        id: s.id || `c-${idx}-${Date.now()}`,
+        type: (s.platform || 'other') as any,
+        name: s.name || s.platform,
+        value: s.url || '',
+      }));
+    }
+
+    const rawIg = settings?.instagram || 'catyapii';
+    const cleanIg = rawIg.replace(/^@/, '').trim();
+    return [
+      { id: 'c-1', type: 'instagram' as const, name: 'Instagram', value: cleanIg },
+      { id: 'c-2', type: 'whatsapp' as const, name: 'WhatsApp', value: settings?.whatsapp || '0535 219 47 89' },
+      { id: 'c-3', type: 'website' as const, name: 'Web Sitesi', value: 'https://catkapi.com' },
+      { id: 'c-4', type: 'facebook' as const, name: 'Facebook', value: 'https://facebook.com' },
+      { id: 'c-5', type: 'tiktok' as const, name: 'TikTok', value: 'https://tiktok.com/@catyapii' },
+      { id: 'c-6', type: 'youtube' as const, name: 'YouTube', value: 'https://youtube.com' },
+      { id: 'c-7', type: 'email' as const, name: 'E-posta', value: settings?.email || 'info@catkapi.com' },
+      { id: 'c-8', type: 'address' as const, name: 'Adres', value: settings?.address || 'Çay Mah. Cumhuriyet Blv. No:33/A Akdeniz / Mersin' },
+      { id: 'c-9', type: 'phone' as const, name: 'Telefon', value: settings?.phone || '0535 219 47 89' },
+    ];
+  };
+
   const [contactRows, setContactRows] = useState<
     Array<{
       id: string;
@@ -142,21 +163,22 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
       name: string;
       value: string;
     }>
-  >(() => {
-    const rawIg = siteSettings?.instagram || 'catyapii';
-    const cleanIg = rawIg.replace(/^@/, '').trim();
-    return [
-      { id: 'c-1', type: 'instagram', name: 'Instagram', value: cleanIg },
-      { id: 'c-2', type: 'whatsapp', name: 'WhatsApp', value: siteSettings?.whatsapp || '0535 219 47 89' },
-      { id: 'c-3', type: 'website', name: 'Web Sitesi', value: 'https://catkapi.com' },
-      { id: 'c-4', type: 'facebook', name: 'Facebook', value: 'https://facebook.com' },
-      { id: 'c-5', type: 'tiktok', name: 'TikTok', value: 'https://tiktok.com/@catyapii' },
-      { id: 'c-6', type: 'youtube', name: 'YouTube', value: 'https://youtube.com' },
-      { id: 'c-7', type: 'email', name: 'E-posta', value: siteSettings?.email || 'info@catkapi.com' },
-      { id: 'c-8', type: 'address', name: 'Adres', value: siteSettings?.address || 'Çay Mah. Cumhuriyet Blv. No:33/A Akdeniz / Mersin' },
-      { id: 'c-9', type: 'phone', name: 'Telefon', value: siteSettings?.phone || '0535 219 47 89' },
-    ];
-  });
+  >(() => buildInitialContactRows(siteSettings));
+
+  // Sync tempSettings and contactRows if siteSettings props change
+  useEffect(() => {
+    setTempSettings((prev) => ({ ...prev, ...siteSettings }));
+    if (siteSettings?.socialLinks && siteSettings.socialLinks.length > 0) {
+      setContactRows(
+        siteSettings.socialLinks.map((s, idx) => ({
+          id: s.id || `c-${idx}`,
+          type: (s.platform || 'other') as any,
+          name: s.name || s.platform,
+          value: s.url || '',
+        }))
+      );
+    }
+  }, [siteSettings]);
 
   // Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -1024,7 +1046,7 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
                 {categories.map((cat) => {
                   const isCatSelected =
                     selectedCategoryFilter === cat.name && selectedSubCategoryFilter === null;
-                  const isExpanded = expandedCats[cat.id] ?? true;
+                  const isExpanded = !!expandedCats[cat.id];
                   const isCatHidden = cat.isActive === false;
 
                   return (
@@ -2775,7 +2797,34 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onUpdateSiteSettings(tempSettings);
+                      // Construct updated socialLinks array from contactRows exactly as typed
+                      const updatedSocialLinks: SocialLink[] = contactRows
+                        .filter((r) => r.value.trim() !== '')
+                        .map((r) => ({
+                          id: r.id,
+                          platform: r.type,
+                          name: r.name,
+                          url: r.value.trim(),
+                        }));
+
+                      const igRow = contactRows.find((r) => r.type === 'instagram');
+                      const waRow = contactRows.find((r) => r.type === 'whatsapp');
+                      const phoneRow = contactRows.find((r) => r.type === 'phone');
+                      const emailRow = contactRows.find((r) => r.type === 'email');
+                      const addrRow = contactRows.find((r) => r.type === 'address');
+
+                      const finalSettings: SiteSettings = {
+                        ...tempSettings,
+                        instagram: igRow ? igRow.value.trim() : tempSettings.instagram,
+                        whatsapp: waRow ? waRow.value.trim() : tempSettings.whatsapp,
+                        phone: phoneRow ? phoneRow.value.trim() : tempSettings.phone,
+                        email: emailRow ? emailRow.value.trim() : tempSettings.email,
+                        address: addrRow ? addrRow.value.trim() : tempSettings.address,
+                        socialLinks: updatedSocialLinks,
+                      };
+
+                      setTempSettings(finalSettings);
+                      onUpdateSiteSettings(finalSettings);
                       showToast('İletişim, harita ve sosyal medya bilgileri başarıyla kaydedildi ve yayınlandı!');
                     }}
                     className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
