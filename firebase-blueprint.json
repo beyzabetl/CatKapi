@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Çat Kapı showroom and custom furniture products",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "subCategory": { "type": "string" },
+        "description": { "type": "string" },
+        "extendedDescription": { "type": "string" },
+        "dimensions": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "coverImageIndex": { "type": "number" },
+        "startingPrice": { "type": "number" },
+        "campaignPrice": { "type": "number" },
+        "priceDisplayMode": { "type": "string" },
+        "isCustomProduction": { "type": "boolean" },
+        "isCampaign": { "type": "boolean" },
+        "isNew": { "type": "boolean" },
+        "isHidden": { "type": "boolean" },
+        "stockStatus": { "type": "string" },
+        "materials": { "type": "array", "items": { "type": "string" } },
+        "keyFeatures": { "type": "array", "items": { "type": "string" } },
+        "specs": { "type": "object" }
+      },
+      "required": ["id", "name", "category", "images", "startingPrice"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Showroom category and subcategories",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "subCategories": { "type": "array" }
+      },
+      "required": ["id", "name"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website configuration, hero slides, contacts, and texts",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "workingHours": { "type": "string" },
+        "instagram": { "type": "string" },
+        "heroSlides": { "type": "array" },
+        "promoSection": { "type": "object" },
+        "socialLinks": { "type": "array" },
+        "contactCards": { "type": "array" },
+        "seoTitle": { "type": "string" },
+        "seoDescription": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "products/{productId}": {
+      "entity": "Product",
+      "description": "Products collection"
+    },
+    "categories/{categoryId}": {
+      "entity": "Category",
+      "description": "Categories collection"
+    },
+    "site_settings/{settingId}": {
+      "entity": "SiteSettings",
+      "description": "Global site configuration documents"
+    }
+  }
+}

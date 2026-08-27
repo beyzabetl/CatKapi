@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Corporate } from './components/Corporate';
@@ -17,6 +17,13 @@ import {
 } from './data/mockData';
 import { Product, Category, SiteSettings, MainTabType } from './types';
 import { MessageCircle, Phone, ArrowUp } from 'lucide-react';
+import {
+  saveProductsToFirestore,
+  saveCategoriesToFirestore,
+  saveSiteSettingsToFirestore,
+  subscribeToFirestoreData,
+  initializeCloudDatabaseIfEmpty,
+} from './services/firestoreSync';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
@@ -57,7 +64,62 @@ export default function App() {
   const [isAdminCmsOpen, setIsAdminCmsOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  // Sync state to local storage
+  // Cloud Database Sync on initial load + Real-time subscriptions
+  useEffect(() => {
+    // 1. Initialize cloud database if empty, or fetch latest cloud state
+    initializeCloudDatabaseIfEmpty(products, categories, siteSettings)
+      .then((cloudData) => {
+        if (cloudData.products && cloudData.products.length > 0) {
+          setProducts(cloudData.products);
+          localStorage.setItem('catkapi_products_v1', JSON.stringify(cloudData.products));
+        }
+        if (cloudData.categories && cloudData.categories.length > 0) {
+          setCategories(cloudData.categories);
+          localStorage.setItem('catkapi_categories_v1', JSON.stringify(cloudData.categories));
+        }
+        if (cloudData.siteSettings && cloudData.siteSettings.companyName) {
+          setSiteSettings(cloudData.siteSettings);
+          localStorage.setItem('catkapi_site_settings_v1', JSON.stringify(cloudData.siteSettings));
+        }
+      })
+      .catch((err) => {
+        console.warn('[Firestore] Cloud init warning:', err);
+      });
+
+    // 2. Subscribe to live Firestore updates across all devices
+    const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
+      if (newProds && newProds.length > 0) {
+        setProducts(newProds);
+        try {
+          localStorage.setItem('catkapi_products_v1', JSON.stringify(newProds));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      if (newCats && newCats.length > 0) {
+        setCategories(newCats);
+        try {
+          localStorage.setItem('catkapi_categories_v1', JSON.stringify(newCats));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      if (newSettings && newSettings.companyName) {
+        setSiteSettings(newSettings);
+        try {
+          localStorage.setItem('catkapi_site_settings_v1', JSON.stringify(newSettings));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Sync state to local storage AND Cloud Firestore
   const handleUpdateProducts = (newProducts: Product[]) => {
     setProducts(newProducts);
     try {
@@ -65,6 +127,10 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    // Save to Cloud Firestore
+    saveProductsToFirestore(newProducts).catch((err) => {
+      console.error('[Firestore] Failed to save products to cloud:', err);
+    });
   };
 
   const handleUpdateCategories = (newCats: Category[]) => {
@@ -74,6 +140,10 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    // Save to Cloud Firestore
+    saveCategoriesToFirestore(newCats).catch((err) => {
+      console.error('[Firestore] Failed to save categories to cloud:', err);
+    });
   };
 
   const handleUpdateSiteSettings = (newSettings: SiteSettings) => {
@@ -83,6 +153,10 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    // Save to Cloud Firestore
+    saveSiteSettingsToFirestore(newSettings).catch((err) => {
+      console.error('[Firestore] Failed to save site settings to cloud:', err);
+    });
   };
 
   // Scroll listener
