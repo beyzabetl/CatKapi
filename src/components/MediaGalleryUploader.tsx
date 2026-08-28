@@ -311,8 +311,8 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
               type="url"
               value={inputUrl}
               onChange={(e) => setInputUrl(e.target.value)}
-              placeholder="Görsel / Video / GIF URL adresi yapıştırın..."
-              className="w-full bg-[#111111] border border-stone-750 text-xs px-3.5 py-2.5 rounded-xl text-white outline-none focus:border-amber-500 placeholder:text-stone-600"
+              placeholder="YouTube, Vimeo, MP4 video veya Fotoğraf URL adresi yapıştırın..."
+              className="w-full bg-[#111111] border border-stone-750 text-xs px-3.5 py-2.5 rounded-xl text-white outline-none focus:border-amber-500 placeholder:text-stone-500"
             />
             <button
               type="button"
@@ -325,9 +325,10 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
           </div>
         </div>
 
-        <p className="text-[10px] text-stone-400">
-          * Bilgisayarınızdan tek seferde veya parça parça en fazla 30 adet görsel, video ve GIF seçip yükleyebilirsiniz.
-        </p>
+        <div className="flex flex-wrap items-center gap-3 text-[10px] text-stone-400">
+          <span>✓ <strong>Sınırsız Fotoğraf:</strong> Cihazınızdan istediğiniz kadar mobilya fotoğrafı seçip yükleyebilirsiniz.</span>
+          <span>✓ <strong>Video Desteği:</strong> YouTube (Shorts dahil), Vimeo veya doğrudan .mp4 video linklerini yapıştırarak ürüne video ekleyebilirsiniz.</span>
+        </div>
       </div>
     </div>
   );

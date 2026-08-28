@@ -43,6 +43,10 @@ import {
   Video,
   FolderTree,
   Tag,
+  Download,
+  Database,
+  UploadCloud,
+  FileJson,
 } from 'lucide-react';
 import {
   Product,
@@ -56,6 +60,7 @@ import {
   SocialLink,
 } from '../types';
 import { MediaGalleryUploader } from './MediaGalleryUploader';
+import { exportDatabaseBackup, importDatabaseBackup } from '../services/storageManager';
 
 interface AdminUnifiedCmsProps {
   products: Product[];
@@ -208,6 +213,7 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   };
 
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const backupFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = (msg: string) => {
     if (toastTimeoutRef.current) {
@@ -217,6 +223,38 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
     }, 3000);
+  };
+
+  // Full Database Backup Export to JSON
+  const handleExportBackup = () => {
+    try {
+      exportDatabaseBackup(products, categories, tempSettings);
+      showToast('Tüm site veritabanı (Ürünler, Galeriler, Ayarlar) başarıyla JSON dosyası olarak indirildi!');
+    } catch (err) {
+      console.error(err);
+      alert('Yedek indirilirken bir hata oluştu.');
+    }
+  };
+
+  // Full Database Backup Import from JSON file
+  const handleImportBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const restored = await importDatabaseBackup(file);
+      onUpdateProducts(restored.products);
+      onUpdateCategories(restored.categories);
+      onUpdateSiteSettings(restored.siteSettings);
+      setTempSettings(restored.siteSettings);
+
+      showToast(`Yedek başarıyla yüklendi! (${restored.products.length} ürün, ${restored.categories.length} kategori geri yüklendi)`);
+    } catch (err) {
+      console.error(err);
+      alert('Yedek dosyası yüklenemedi. Lütfen geçerli bir Çat Kapı yedek JSON dosyası seçiniz.');
+    }
+
+    e.target.value = '';
   };
 
   // Toggle tree expand
@@ -907,6 +945,37 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
 
         {/* Right Actions (Matching Image 4) */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Hidden JSON Backup File Input */}
+          <input
+            type="file"
+            ref={backupFileInputRef}
+            onChange={handleImportBackupFile}
+            accept=".json"
+            className="hidden"
+          />
+
+          {/* Backup Download Button */}
+          <button
+            type="button"
+            onClick={handleExportBackup}
+            className="px-2.5 py-2 bg-stone-900 hover:bg-stone-800 border border-stone-750 text-stone-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Tüm Ürün, Kategori ve Sayfa Verilerini Bilgisayarınıza JSON Olarak İndirir"
+          >
+            <Download size={13} className="text-amber-400" />
+            <span className="hidden md:inline">Yedek İndir</span>
+          </button>
+
+          {/* Backup Restore Button */}
+          <button
+            type="button"
+            onClick={() => backupFileInputRef.current?.click()}
+            className="px-2.5 py-2 bg-stone-900 hover:bg-stone-800 border border-stone-750 text-stone-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Daha önce indirilen JSON yedeğini yükler"
+          >
+            <UploadCloud size={13} className="text-amber-400" />
+            <span className="hidden md:inline">Yedek Yükle</span>
+          </button>
+
           <button
             onClick={() => {
               onUpdateSiteSettings(tempSettings);

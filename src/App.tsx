@@ -24,6 +24,12 @@ import {
   subscribeToFirestoreData,
   initializeCloudDatabaseIfEmpty,
 } from './services/firestoreSync';
+import {
+  persistProducts,
+  persistCategories,
+  persistSiteSettings,
+  loadPersistedData,
+} from './services/storageManager';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
@@ -31,7 +37,7 @@ export default function App() {
   // Persistence for products, categories, siteSettings
   const [products, setProducts] = useState<Product[]>(() => {
     try {
-      const saved = localStorage.getItem('catkapi_products_v1');
+      const saved = localStorage.getItem('catkapi_products_v1') || localStorage.getItem('catkapi_products');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -41,7 +47,7 @@ export default function App() {
 
   const [categories, setCategories] = useState<Category[]>(() => {
     try {
-      const saved = localStorage.getItem('catkapi_categories_v1');
+      const saved = localStorage.getItem('catkapi_categories_v1') || localStorage.getItem('catkapi_categories');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -51,7 +57,7 @@ export default function App() {
 
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
     try {
-      const saved = localStorage.getItem('catkapi_site_settings_v1');
+      const saved = localStorage.getItem('catkapi_site_settings_v1') || localStorage.getItem('catkapi_site_settings');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -64,40 +70,51 @@ export default function App() {
   const [isAdminCmsOpen, setIsAdminCmsOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  // Cloud Database Sync on initial load + Real-time subscriptions
+  // IndexedDB & Cloud Database Sync on initial load
   useEffect(() => {
-    // 1. Initialize cloud database if empty, or fetch latest cloud state
+    // 1. Load large-scale persistent storage (IndexedDB)
+    loadPersistedData()
+      .then((persisted) => {
+        if (persisted.products && persisted.products.length > 0) {
+          setProducts(persisted.products);
+        }
+        if (persisted.categories && persisted.categories.length > 0) {
+          setCategories(persisted.categories);
+        }
+        if (persisted.siteSettings && persisted.siteSettings.companyName) {
+          setSiteSettings(persisted.siteSettings);
+        }
+      })
+      .catch((e) => console.warn('[Storage] Load error:', e));
+
+    // 2. Initialize cloud database if available
     initializeCloudDatabaseIfEmpty(products, categories, siteSettings)
       .then((cloudData) => {
         if (cloudData.products && cloudData.products.length > 0) {
           setProducts(cloudData.products);
-          localStorage.setItem('catkapi_products_v1', JSON.stringify(cloudData.products));
+          persistProducts(cloudData.products);
         }
         if (cloudData.categories && cloudData.categories.length > 0) {
           setCategories(cloudData.categories);
-          localStorage.setItem('catkapi_categories_v1', JSON.stringify(cloudData.categories));
+          persistCategories(cloudData.categories);
         }
         if (cloudData.siteSettings && cloudData.siteSettings.companyName) {
           setSiteSettings(cloudData.siteSettings);
-          localStorage.setItem('catkapi_site_settings_v1', JSON.stringify(cloudData.siteSettings));
+          persistSiteSettings(cloudData.siteSettings);
         }
       })
       .catch((err) => {
-        console.warn('[Firestore] Cloud init warning:', err);
+        console.warn('[Firestore] Cloud init notice:', err);
       });
 
-    // 2. Subscribe to live Firestore updates across all devices
+    // 3. Subscribe to live Firestore updates across all devices
     const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
       if (newProds && newProds.length > 0) {
         setProducts((prev) => {
           const cloudMap = new Map(newProds.map((p) => [p.id, p]));
           const unsaved = prev.filter((p) => !cloudMap.has(p.id));
           const combined = unsaved.length > 0 ? [...newProds, ...unsaved] : newProds;
-          try {
-            localStorage.setItem('catkapi_products_v1', JSON.stringify(combined));
-          } catch (e) {
-            console.error(e);
-          }
+          persistProducts(combined);
           return combined;
         });
       }
@@ -106,21 +123,13 @@ export default function App() {
           const cloudCatMap = new Map(newCats.map((c) => [c.id, c]));
           const unsavedCats = prev.filter((c) => !cloudCatMap.has(c.id));
           const combinedCats = unsavedCats.length > 0 ? [...newCats, ...unsavedCats] : newCats;
-          try {
-            localStorage.setItem('catkapi_categories_v1', JSON.stringify(combinedCats));
-          } catch (e) {
-            console.error(e);
-          }
+          persistCategories(combinedCats);
           return combinedCats;
         });
       }
       if (newSettings && newSettings.companyName) {
         setSiteSettings(newSettings);
-        try {
-          localStorage.setItem('catkapi_site_settings_v1', JSON.stringify(newSettings));
-        } catch (e) {
-          console.error(e);
-        }
+        persistSiteSettings(newSettings);
       }
     });
 
@@ -129,43 +138,46 @@ export default function App() {
     };
   }, []);
 
-  // Sync state to local storage AND Cloud Firestore
+  // Sync state to IndexedDB, LocalStorage AND Cloud Firestore
   const handleUpdateProducts = (newProducts: Product[]) => {
     setProducts(newProducts);
+    persistProducts(newProducts);
     try {
       localStorage.setItem('catkapi_products_v1', JSON.stringify(newProducts));
     } catch (e) {
-      console.error(e);
+      console.warn(e);
     }
     // Save to Cloud Firestore
     saveProductsToFirestore(newProducts).catch((err) => {
-      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
+      console.warn('[Firestore] Sync notice (saved safely in storage):', err);
     });
   };
 
   const handleUpdateCategories = (newCats: Category[]) => {
     setCategories(newCats);
+    persistCategories(newCats);
     try {
       localStorage.setItem('catkapi_categories_v1', JSON.stringify(newCats));
     } catch (e) {
-      console.error(e);
+      console.warn(e);
     }
     // Save to Cloud Firestore
     saveCategoriesToFirestore(newCats).catch((err) => {
-      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
+      console.warn('[Firestore] Sync notice (saved safely in storage):', err);
     });
   };
 
   const handleUpdateSiteSettings = (newSettings: SiteSettings) => {
     setSiteSettings(newSettings);
+    persistSiteSettings(newSettings);
     try {
       localStorage.setItem('catkapi_site_settings_v1', JSON.stringify(newSettings));
     } catch (e) {
-      console.error(e);
+      console.warn(e);
     }
     // Save to Cloud Firestore
     saveSiteSettingsToFirestore(newSettings).catch((err) => {
-      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
+      console.warn('[Firestore] Sync notice (saved safely in storage):', err);
     });
   };
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, MessageCircle, ChevronLeft, ChevronRight, Phone, Ruler } from 'lucide-react';
+import { X, MessageCircle, ChevronLeft, ChevronRight, Phone, Ruler, Play, Film } from 'lucide-react';
 import { Product } from '../types';
 
 interface ProductDetailModalProps {
@@ -15,6 +15,42 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
     : ['https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800'];
 
   const [activeImageIndex, setActiveImageIndex] = useState(product.coverImageIndex ?? 0);
+
+  const isVideo = (url?: string) => {
+    if (!url) return false;
+    return (
+      url.startsWith('data:video') ||
+      url.endsWith('.mp4') ||
+      url.endsWith('.webm') ||
+      url.endsWith('.mov') ||
+      url.includes('youtube.com') ||
+      url.includes('youtu.be') ||
+      url.includes('vimeo.com')
+    );
+  };
+
+  const getEmbedUrl = (url: string) => {
+    if (url.includes('youtube.com/watch?v=')) {
+      const id = url.split('watch?v=')[1]?.split('&')[0];
+      return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`;
+    }
+    if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0];
+      return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`;
+    }
+    if (url.includes('youtube.com/shorts/')) {
+      const id = url.split('/shorts/')[1]?.split('?')[0];
+      return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`;
+    }
+    if (url.includes('vimeo.com/')) {
+      const id = url.split('vimeo.com/')[1]?.split('?')[0];
+      return `https://player.vimeo.com/video/${id}?autoplay=1`;
+    }
+    return url;
+  };
+
+  const activeMediaUrl = images[activeImageIndex] || images[0];
+  const activeIsVideo = isVideo(activeMediaUrl);
 
   const formattedPrice =
     product.campaignPrice && product.isCampaign
@@ -62,15 +98,35 @@ Mersin adresime yerinde ücretsiz keşif için müsaitlik durumunuzu öğrenebil
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 max-h-[85vh] overflow-y-auto">
-          {/* Left Column: Image Carousel & Gallery */}
+          {/* Left Column: Image/Video Carousel & Gallery */}
           <div className="lg:col-span-6 bg-stone-950 p-4 sm:p-6 flex flex-col justify-between space-y-4">
-            <div className="relative aspect-[4/3] w-full rounded-2xl overflow-hidden bg-[#111111] border border-stone-850">
-              <img
-                src={images[activeImageIndex] || images[0]}
-                alt={product.name}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-all duration-300"
-              />
+            <div className="relative aspect-[4/3] w-full rounded-2xl overflow-hidden bg-[#111111] border border-stone-850 flex items-center justify-center">
+              {activeIsVideo ? (
+                activeMediaUrl.includes('youtube') || activeMediaUrl.includes('youtu.be') || activeMediaUrl.includes('vimeo') ? (
+                  <iframe
+                    src={getEmbedUrl(activeMediaUrl)}
+                    title={product.name}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  <video
+                    src={activeMediaUrl}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain bg-black"
+                  />
+                )
+              ) : (
+                <img
+                  src={activeMediaUrl}
+                  alt={product.name}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover transition-all duration-300"
+                />
+              )}
 
               {/* Navigation Arrows */}
               {images.length > 1 && (
@@ -79,7 +135,7 @@ Mersin adresime yerinde ücretsiz keşif için müsaitlik durumunuzu öğrenebil
                     onClick={() =>
                       setActiveImageIndex((prev) => (prev - 1 + images.length) % images.length)
                     }
-                    className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer border border-stone-800 transition-all"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer border border-stone-800 transition-all z-10"
                   >
                     <ChevronLeft size={16} />
                   </button>
@@ -87,7 +143,7 @@ Mersin adresime yerinde ücretsiz keşif için müsaitlik durumunuzu öğrenebil
                     onClick={() =>
                       setActiveImageIndex((prev) => (prev + 1) % images.length)
                     }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer border border-stone-800 transition-all"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/70 hover:bg-black text-white cursor-pointer border border-stone-800 transition-all z-10"
                   >
                     <ChevronRight size={16} />
                   </button>
@@ -95,7 +151,7 @@ Mersin adresime yerinde ücretsiz keşif için müsaitlik durumunuzu öğrenebil
               )}
 
               {/* Counter Badge */}
-              <div className="absolute bottom-3 right-3 px-2.5 py-1 bg-black/80 backdrop-blur rounded-lg text-[10px] font-mono font-bold text-stone-300 border border-stone-800">
+              <div className="absolute bottom-3 right-3 px-2.5 py-1 bg-black/80 backdrop-blur rounded-lg text-[10px] font-mono font-bold text-stone-300 border border-stone-800 z-10">
                 {activeImageIndex + 1} / {images.length}
               </div>
             </div>
@@ -103,24 +159,34 @@ Mersin adresime yerinde ücretsiz keşif için müsaitlik durumunuzu öğrenebil
             {/* Thumbnail Strip */}
             {images.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`relative w-16 h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
-                      idx === activeImageIndex
-                        ? 'border-amber-500 scale-95 shadow-md'
-                        : 'border-stone-800 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={img}
-                      alt={`Thumbnail ${idx + 1}`}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
-                ))}
+                {images.map((mediaUrl, idx) => {
+                  const mediaIsVid = isVideo(mediaUrl);
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setActiveImageIndex(idx)}
+                      className={`relative w-16 h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer bg-stone-900 flex items-center justify-center ${
+                        idx === activeImageIndex
+                          ? 'border-amber-500 scale-95 shadow-md'
+                          : 'border-stone-800 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      {mediaIsVid ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-stone-900 text-amber-400">
+                          <Film size={18} />
+                          <span className="text-[9px] font-mono font-bold mt-0.5">Video</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={mediaUrl}
+                          alt={`Thumbnail ${idx + 1}`}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
