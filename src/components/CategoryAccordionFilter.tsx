@@ -42,13 +42,16 @@ export const CategoryAccordionFilter: React.FC<CategoryAccordionFilterProps> = (
 
   const activeCategories = categories.filter((c) => c.isActive !== false);
 
+  // Normalize Turkish text helper
+  const trNorm = (str?: string) => (str || '').trim().toLocaleLowerCase('tr-TR');
+
   // Filter categories and subcategories by categorySearchQuery
   const filteredCategories = activeCategories.filter((cat) => {
     if (!categorySearchQuery.trim()) return true;
-    const q = categorySearchQuery.toLowerCase().trim();
-    if (cat.name.toLowerCase().includes(q)) return true;
+    const q = trNorm(categorySearchQuery);
+    if (trNorm(cat.name).includes(q)) return true;
     return (cat.subCategories || []).some((sub) =>
-      sub.name.toLowerCase().includes(q)
+      trNorm(sub.name).includes(q)
     );
   });
 
@@ -113,7 +116,7 @@ export const CategoryAccordionFilter: React.FC<CategoryAccordionFilterProps> = (
           {filteredCategories.map((cat) => {
             const isOpen = Boolean(openCategoryIds[cat.id]);
             const isCategorySelected =
-              selectedMainCategory?.toLowerCase() === cat.name.toLowerCase() &&
+              trNorm(selectedMainCategory || '') === trNorm(cat.name) &&
               !selectedSubCategory;
 
             return (
@@ -170,8 +173,8 @@ export const CategoryAccordionFilter: React.FC<CategoryAccordionFilterProps> = (
                       .filter((sub) => sub.isActive !== false)
                       .map((sub) => {
                         const isSubSelected =
-                          selectedMainCategory?.toLowerCase() === cat.name.toLowerCase() &&
-                          selectedSubCategory?.toLowerCase() === sub.name.toLowerCase();
+                          trNorm(selectedMainCategory || '') === trNorm(cat.name) &&
+                          trNorm(selectedSubCategory || '') === trNorm(sub.name);
 
                         return (
                           <button

@@ -35,17 +35,47 @@ export const Showroom: React.FC<ShowroomProps> = ({
       if (selectedMainCategory) {
         const itemCat = (item.category || '').trim().toLocaleLowerCase('tr-TR');
         const selCat = selectedMainCategory.trim().toLocaleLowerCase('tr-TR');
-        if (itemCat !== selCat) {
+
+        const matchedCategoryObj = categories.find(
+          (c) =>
+            c.name.trim().toLocaleLowerCase('tr-TR') === selCat ||
+            c.id.trim().toLocaleLowerCase('tr-TR') === selCat
+        );
+
+        const validCatSet = new Set(
+          [
+            selCat,
+            matchedCategoryObj?.name?.trim().toLocaleLowerCase('tr-TR'),
+            matchedCategoryObj?.id?.trim().toLocaleLowerCase('tr-TR'),
+          ].filter(Boolean)
+        );
+
+        if (!validCatSet.has(itemCat)) {
           return false;
         }
-      }
 
-      // Sub Category Match
-      if (selectedSubCategory) {
-        const itemSub = (item.subCategory || '').trim().toLocaleLowerCase('tr-TR');
-        const selSub = selectedSubCategory.trim().toLocaleLowerCase('tr-TR');
-        if (itemSub !== selSub) {
-          return false;
+        // Sub Category Match
+        if (selectedSubCategory) {
+          const itemSub = (item.subCategory || '').trim().toLocaleLowerCase('tr-TR');
+          const selSub = selectedSubCategory.trim().toLocaleLowerCase('tr-TR');
+
+          const matchedSubObj = matchedCategoryObj?.subCategories?.find(
+            (s) =>
+              s.name.trim().toLocaleLowerCase('tr-TR') === selSub ||
+              s.id.trim().toLocaleLowerCase('tr-TR') === selSub
+          );
+
+          const validSubSet = new Set(
+            [
+              selSub,
+              matchedSubObj?.name?.trim().toLocaleLowerCase('tr-TR'),
+              matchedSubObj?.id?.trim().toLocaleLowerCase('tr-TR'),
+            ].filter(Boolean)
+          );
+
+          if (!validSubSet.has(itemSub)) {
+            return false;
+          }
         }
       }
 
@@ -67,7 +97,7 @@ export const Showroom: React.FC<ShowroomProps> = ({
 
       return true;
     });
-  }, [products, selectedMainCategory, selectedSubCategory, searchQuery]);
+  }, [products, categories, selectedMainCategory, selectedSubCategory, searchQuery]);
 
   const handleClearFilters = () => {
     setSelectedMainCategory(null);

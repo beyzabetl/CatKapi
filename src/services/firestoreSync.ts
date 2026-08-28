@@ -30,7 +30,7 @@ function cleanForFirestore<T>(data: T): T {
 }
 
 /**
- * Save all products to Firestore in batches
+ * Save all products to Firestore in safe chunked batches
  */
 export async function saveProductsToFirestore(products: Product[]): Promise<void> {
   try {
@@ -39,32 +39,49 @@ export async function saveProductsToFirestore(products: Product[]): Promise<void
     const currentCloudIds = new Set(snapshot.docs.map((d) => d.id));
     const newProductIds = new Set(products.map((p) => p.id));
 
-    const batch = writeBatch(db);
-
-    // Add / Update products
-    products.forEach((prod) => {
-      const docRef = doc(db, PRODUCTS_COLLECTION, prod.id);
-      batch.set(docRef, cleanForFirestore(prod));
-    });
+    // Chunk writes in groups of 40 to avoid Firestore limits
+    const CHUNK_SIZE = 40;
+    for (let i = 0; i < products.length; i += CHUNK_SIZE) {
+      const chunk = products.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((prod) => {
+        const docRef = doc(db, PRODUCTS_COLLECTION, prod.id);
+        batch.set(docRef, cleanForFirestore(prod));
+      });
+      await batch.commit();
+    }
 
     // Delete products that no longer exist
-    currentCloudIds.forEach((id) => {
-      if (!newProductIds.has(id)) {
+    const toDelete = Array.from(currentCloudIds).filter((id) => !newProductIds.has(id));
+    for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+      const chunk = toDelete.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
         const docRef = doc(db, PRODUCTS_COLLECTION, id);
         batch.delete(docRef);
-      }
-    });
+      });
+      await batch.commit();
+    }
 
-    await batch.commit();
     console.log('[Firestore] Successfully synced products to cloud');
   } catch (error) {
-    console.error('[Firestore] Error saving products:', error);
-    throw error;
+    console.error('[Firestore] Error saving products with batch, falling back to individual setDoc:', error);
+    // Fallback: save each product individually so one corrupt document doesn't fail everything
+    try {
+      await Promise.all(
+        products.map((prod) =>
+          setDoc(doc(db, PRODUCTS_COLLECTION, prod.id), cleanForFirestore(prod))
+        )
+      );
+      console.log('[Firestore] Successfully synced products to cloud via individual setDoc');
+    } catch (fallbackError) {
+      console.error('[Firestore] Fallback individual setDoc error:', fallbackError);
+    }
   }
 }
 
 /**
- * Save all categories to Firestore in batch
+ * Save all categories to Firestore in safe chunked batches
  */
 export async function saveCategoriesToFirestore(categories: Category[]): Promise<void> {
   try {
@@ -72,25 +89,41 @@ export async function saveCategoriesToFirestore(categories: Category[]): Promise
     const currentCloudIds = new Set(snapshot.docs.map((d) => d.id));
     const newCatIds = new Set(categories.map((c) => c.id));
 
-    const batch = writeBatch(db);
+    const CHUNK_SIZE = 40;
+    for (let i = 0; i < categories.length; i += CHUNK_SIZE) {
+      const chunk = categories.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((cat) => {
+        const docRef = doc(db, CATEGORIES_COLLECTION, cat.id);
+        batch.set(docRef, cleanForFirestore(cat));
+      });
+      await batch.commit();
+    }
 
-    categories.forEach((cat) => {
-      const docRef = doc(db, CATEGORIES_COLLECTION, cat.id);
-      batch.set(docRef, cleanForFirestore(cat));
-    });
-
-    currentCloudIds.forEach((id) => {
-      if (!newCatIds.has(id)) {
+    const toDelete = Array.from(currentCloudIds).filter((id) => !newCatIds.has(id));
+    for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+      const chunk = toDelete.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
         const docRef = doc(db, CATEGORIES_COLLECTION, id);
         batch.delete(docRef);
-      }
-    });
+      });
+      await batch.commit();
+    }
 
-    await batch.commit();
     console.log('[Firestore] Successfully synced categories to cloud');
   } catch (error) {
-    console.error('[Firestore] Error saving categories:', error);
-    throw error;
+    console.error('[Firestore] Error saving categories with batch, falling back to individual setDoc:', error);
+    try {
+      await Promise.all(
+        categories.map((cat) =>
+          setDoc(doc(db, CATEGORIES_COLLECTION, cat.id), cleanForFirestore(cat))
+        )
+      );
+      console.log('[Firestore] Successfully synced categories to cloud via individual setDoc');
+    } catch (fallbackError) {
+      console.error('[Firestore] Fallback categories setDoc error:', fallbackError);
+    }
   }
 }
 

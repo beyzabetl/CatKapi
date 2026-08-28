@@ -32,7 +32,57 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
     );
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Compress and resize image files before saving as data URL to prevent payload overflow
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      // If it is a video or animated gif or svg, don't canvas compress
+      if (!file.type.startsWith('image/') || file.type.includes('gif') || file.type.includes('svg')) {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDimension = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            resolve(compressedDataUrl);
+          } else {
+            resolve((e.target?.result as string) || '');
+          }
+        };
+        img.onerror = () => resolve((e.target?.result as string) || '');
+        img.src = (e.target?.result as string) || '';
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -42,19 +92,14 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
     }
 
     const fileList: File[] = Array.from(files);
-    const readers = fileList.map((file: File) => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (reader.result) resolve(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-      });
-    });
-
-    Promise.all(readers).then((newUrls) => {
-      onChange([...mediaList, ...newUrls]);
-    });
+    try {
+      const readers = fileList.map((file) => compressImage(file));
+      const newUrls = await Promise.all(readers);
+      const validUrls = newUrls.filter((u) => u && u.length > 0);
+      onChange([...mediaList, ...validUrls]);
+    } catch (err) {
+      console.error('Fotoğraf yükleme hatası:', err);
+    }
 
     e.target.value = '';
   };
