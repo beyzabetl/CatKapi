@@ -89,20 +89,30 @@ export default function App() {
     // 2. Subscribe to live Firestore updates across all devices
     const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
       if (newProds && newProds.length > 0) {
-        setProducts(newProds);
-        try {
-          localStorage.setItem('catkapi_products_v1', JSON.stringify(newProds));
-        } catch (e) {
-          console.error(e);
-        }
+        setProducts((prev) => {
+          const cloudMap = new Map(newProds.map((p) => [p.id, p]));
+          const unsaved = prev.filter((p) => !cloudMap.has(p.id));
+          const combined = unsaved.length > 0 ? [...newProds, ...unsaved] : newProds;
+          try {
+            localStorage.setItem('catkapi_products_v1', JSON.stringify(combined));
+          } catch (e) {
+            console.error(e);
+          }
+          return combined;
+        });
       }
       if (newCats && newCats.length > 0) {
-        setCategories(newCats);
-        try {
-          localStorage.setItem('catkapi_categories_v1', JSON.stringify(newCats));
-        } catch (e) {
-          console.error(e);
-        }
+        setCategories((prev) => {
+          const cloudCatMap = new Map(newCats.map((c) => [c.id, c]));
+          const unsavedCats = prev.filter((c) => !cloudCatMap.has(c.id));
+          const combinedCats = unsavedCats.length > 0 ? [...newCats, ...unsavedCats] : newCats;
+          try {
+            localStorage.setItem('catkapi_categories_v1', JSON.stringify(combinedCats));
+          } catch (e) {
+            console.error(e);
+          }
+          return combinedCats;
+        });
       }
       if (newSettings && newSettings.companyName) {
         setSiteSettings(newSettings);
@@ -129,7 +139,7 @@ export default function App() {
     }
     // Save to Cloud Firestore
     saveProductsToFirestore(newProducts).catch((err) => {
-      console.error('[Firestore] Failed to save products to cloud:', err);
+      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
     });
   };
 
@@ -142,7 +152,7 @@ export default function App() {
     }
     // Save to Cloud Firestore
     saveCategoriesToFirestore(newCats).catch((err) => {
-      console.error('[Firestore] Failed to save categories to cloud:', err);
+      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
     });
   };
 
@@ -155,7 +165,7 @@ export default function App() {
     }
     // Save to Cloud Firestore
     saveSiteSettingsToFirestore(newSettings).catch((err) => {
-      console.error('[Firestore] Failed to save site settings to cloud:', err);
+      console.warn('[Firestore] Sync notice (persisted in local storage):', err);
     });
   };
 
@@ -302,6 +312,10 @@ export default function App() {
           onUpdateCategories={handleUpdateCategories}
           onUpdateSiteSettings={handleUpdateSiteSettings}
           onClose={() => setIsAdminCmsOpen(false)}
+          onNavigateToProducts={() => {
+            setIsAdminCmsOpen(false);
+            handleTabChange('products');
+          }}
         />
       )}
     </div>

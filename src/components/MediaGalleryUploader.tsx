@@ -48,7 +48,7 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const maxDimension = 1600;
+          const maxDimension = 1000;
           let width = img.width;
           let height = img.height;
 
@@ -68,7 +68,7 @@ export const MediaGalleryUploader: React.FC<MediaGalleryUploaderProps> = ({
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.72);
             resolve(compressedDataUrl);
           } else {
             resolve((e.target?.result as string) || '');

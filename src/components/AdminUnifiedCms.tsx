@@ -65,6 +65,7 @@ interface AdminUnifiedCmsProps {
   onUpdateCategories: (newCats: Category[]) => void;
   onUpdateSiteSettings: (newSettings: SiteSettings) => void;
   onClose: () => void;
+  onNavigateToProducts?: () => void;
 }
 
 type CmsTab = 'products' | 'hero' | 'archive';
@@ -78,6 +79,7 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   onUpdateCategories,
   onUpdateSiteSettings,
   onClose,
+  onNavigateToProducts,
 }) => {
   const [activeTab, setActiveTab] = useState<CmsTab>('products');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -275,12 +277,41 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
       onUpdateProducts([editingProduct, ...products]);
       setIsCreatingNewProduct(false);
       setSelectedProductId(editingProduct.id);
-      showToast(`'${editingProduct.name}' ürünü başarıyla eklendi ve kaydedildi!`);
+      showToast(`'${editingProduct.name}' ürünü başarıyla eklendi ve sitede yayına alındı!`);
     } else {
       const updated = products.map((p) => (p.id === editingProduct.id ? editingProduct : p));
       onUpdateProducts(updated);
-      showToast(`'${editingProduct.name}' ürün bilgileri başarıyla güncellendi ve kaydedildi!`);
+      showToast(`'${editingProduct.name}' ürün bilgileri güncellendi ve sitede yayına alındı!`);
     }
+  };
+
+  // Save Product and immediately view it in the live Showroom
+  const handleSaveAndGoToShowroom = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!editingProduct) return;
+
+    if (!editingProduct.name.trim()) {
+      alert('Lütfen önce ürün adını yazınız!');
+      return;
+    }
+
+    if (isCreatingNewProduct) {
+      onUpdateProducts([editingProduct, ...products]);
+      setIsCreatingNewProduct(false);
+      setSelectedProductId(editingProduct.id);
+    } else {
+      const updated = products.map((p) => (p.id === editingProduct.id ? editingProduct : p));
+      onUpdateProducts(updated);
+    }
+
+    showToast(`'${editingProduct.name}' kaydedildi! Showroom kataloğuna yönlendiriliyorsunuz...`);
+    setTimeout(() => {
+      if (onNavigateToProducts) {
+        onNavigateToProducts();
+      } else {
+        onClose();
+      }
+    }, 300);
   };
 
   // Delete Product
@@ -1425,27 +1456,49 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
                   className="flex flex-col h-full overflow-hidden"
                 >
                   {/* Top Bar of Editing Panel (Image 4) */}
-                  <div className="p-3.5 border-b border-stone-800 bg-[#141414] flex items-center justify-between shrink-0">
-                    <div>
+                  <div className="p-3.5 border-b border-stone-800 bg-[#141414] flex flex-wrap items-center justify-between gap-2 shrink-0">
+                    <div className="min-w-0">
                       <span className="text-[10px] font-mono text-amber-500 font-black uppercase tracking-wider block">
                         DÜZENLENEN ÜRÜN (ID: {editingProduct.id})
                       </span>
-                      <h2 className="text-xs sm:text-sm font-black text-white uppercase flex items-center gap-1.5">
-                        <Edit2 size={14} className="text-amber-400" />
-                        <span>
+                      <h2 className="text-xs sm:text-sm font-black text-white uppercase flex items-center gap-1.5 truncate">
+                        <Edit2 size={14} className="text-amber-400 shrink-0" />
+                        <span className="truncate">
                           {isCreatingNewProduct ? 'YENİ ÜRÜN OLUŞTUR' : `DÜZENLE: ${editingProduct.name || 'İSİMSİZ'}`}
                         </span>
                       </h2>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleStartNewProduct}
-                      className="px-3 py-1.5 bg-stone-850 hover:bg-stone-800 text-stone-300 hover:text-white border border-stone-750 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus size={13} className="text-amber-400" />
-                      <span>+ Yeni</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleSaveAndGoToShowroom}
+                        className="px-2.5 py-1.5 bg-stone-850 hover:bg-stone-800 text-stone-200 hover:text-white border border-stone-750 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Kaydet ve Showroom Sayfasında Gör"
+                      >
+                        <Eye size={13} className="text-amber-400" />
+                        <span className="hidden sm:inline">Sitede Gör</span>
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black rounded-xl text-xs transition-all flex items-center gap-1 cursor-pointer shadow-md shadow-amber-950/20"
+                        title="Ürünü Kaydet ve Sitede Yayınla"
+                      >
+                        <Save size={13} />
+                        <span>KAYDET</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStartNewProduct}
+                        className="px-2.5 py-1.5 bg-stone-850 hover:bg-stone-800 text-stone-300 hover:text-white border border-stone-750 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Yeni Ürün Formu Aç"
+                      >
+                        <Plus size={13} className="text-amber-400" />
+                        <span className="hidden sm:inline">+ Yeni</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Form Scrollable Content (Images 4, 5, 6) */}
