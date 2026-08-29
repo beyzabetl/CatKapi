@@ -60,8 +60,18 @@ import {
   SocialLink,
 } from '../types';
 import { MediaGalleryUploader } from './MediaGalleryUploader';
-import { exportDatabaseBackup, importDatabaseBackup, trackDeletedProductId } from '../services/storageManager';
-import { deleteProductFromFirestore, saveSingleProductToFirestore } from '../services/firestoreSync';
+import {
+  exportDatabaseBackup,
+  importDatabaseBackup,
+  trackDeletedProductId,
+  isPermanentlyRemovedProduct,
+  getDeletedProductIds,
+} from '../services/storageManager';
+import {
+  deleteProductFromFirestore,
+  saveSingleProductToFirestore,
+  saveProductsToFirestore,
+} from '../services/firestoreSync';
 
 interface AdminUnifiedCmsProps {
   products: Product[];
@@ -363,7 +373,8 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   const handleSafeClose = () => {
     if (editingProduct && editingProduct.name && editingProduct.name.trim().length > 0) {
       if (isCreatingNewProduct) {
-        onUpdateProducts([editingProduct, ...products]);
+        const nextProducts = [editingProduct, ...products];
+        onUpdateProducts(nextProducts);
         saveSingleProductToFirestore(editingProduct).catch(console.warn);
         setIsCreatingNewProduct(false);
       } else {
@@ -860,7 +871,11 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
 
   // Filtered Products for Center Column
   const filteredProducts = useMemo(() => {
+    const deletedSet = getDeletedProductIds();
     return products.filter((p) => {
+      if (!p || !p.id) return false;
+      if (deletedSet.has(p.id) || isPermanentlyRemovedProduct(p)) return false;
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLocaleLowerCase('tr-TR').trim();
         const matchName = (p.name || '').toLocaleLowerCase('tr-TR').includes(q);
@@ -887,7 +902,15 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
   }, [products, searchQuery, selectedCategoryFilter, selectedSubCategoryFilter]);
 
   const hiddenProducts = useMemo(() => {
-    return products.filter((p) => p.isHidden || p.isArchived);
+    const deletedSet = getDeletedProductIds();
+    return products.filter(
+      (p) =>
+        p &&
+        p.id &&
+        !deletedSet.has(p.id) &&
+        !isPermanentlyRemovedProduct(p) &&
+        (p.isHidden || p.isArchived)
+    );
   }, [products]);
 
   const hiddenCategories = useMemo(() => {

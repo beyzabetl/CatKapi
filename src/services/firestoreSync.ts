@@ -7,6 +7,7 @@ import {
   deleteDoc,
   writeBatch,
   onSnapshot,
+  disableNetwork,
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -16,15 +17,73 @@ import {
   INITIAL_CATEGORIES,
   INITIAL_SITE_SETTINGS,
 } from '../data/mockData';
+import {
+  getDeletedProductIds,
+  trackDeletedProductId,
+  isPermanentlyRemovedProduct,
+  PERMANENTLY_REMOVED_PRODUCT_IDS,
+} from './storageManager';
 
 // Firestore collection names
 const PRODUCTS_COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
 const SETTINGS_COLLECTION = 'site_settings';
 const GLOBAL_SETTINGS_DOC = 'global';
+const TOMBSTONES_DOC = 'tombstones_meta';
 
-// Circuit breaker for Firestore quota or connectivity limits
+// Persistent Circuit breaker key
+const QUOTA_STORAGE_KEY = 'catkapi_firestore_quota_disabled_until';
 let isQuotaExceeded = false;
+
+// Check initially on module load
+try {
+  const disabledUntil = localStorage.getItem(QUOTA_STORAGE_KEY);
+  if (disabledUntil) {
+    const untilTime = parseInt(disabledUntil, 10);
+    if (!isNaN(untilTime) && Date.now() < untilTime) {
+      isQuotaExceeded = true;
+      disableNetwork(db).catch(() => {});
+    }
+  }
+} catch {
+  // Ignore
+}
+
+function isQuotaDisabled(): boolean {
+  if (isQuotaExceeded) return true;
+  try {
+    const disabledUntil = localStorage.getItem(QUOTA_STORAGE_KEY);
+    if (disabledUntil) {
+      const untilTime = parseInt(disabledUntil, 10);
+      if (!isNaN(untilTime) && Date.now() < untilTime) {
+        isQuotaExceeded = true;
+        disableNetwork(db).catch(() => {});
+        return true;
+      } else {
+        localStorage.removeItem(QUOTA_STORAGE_KEY);
+      }
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+  return false;
+}
+
+function markQuotaExceeded(): void {
+  isQuotaExceeded = true;
+  try {
+    // Disable Firestore network calls for 24 hours to prevent SDK retry backoff loops
+    const disableUntil = Date.now() + 24 * 60 * 60 * 1000;
+    localStorage.setItem(QUOTA_STORAGE_KEY, disableUntil.toString());
+  } catch {
+    // Ignore localStorage errors
+  }
+  try {
+    disableNetwork(db).catch(() => {});
+  } catch {
+    // Ignore
+  }
+}
 
 function isQuotaError(err: unknown): boolean {
   if (!err) return false;
@@ -37,9 +96,11 @@ function isQuotaError(err: unknown): boolean {
   return (
     code.includes('resource-exhausted') ||
     code.includes('quota') ||
+    code.includes('unavailable') ||
     msg.toLowerCase().includes('quota') ||
     msg.toLowerCase().includes('resource-exhausted') ||
-    msg.toLowerCase().includes('limit exceeded')
+    msg.toLowerCase().includes('limit exceeded') ||
+    msg.toLowerCase().includes('maximum backoff')
   );
 }
 
@@ -51,19 +112,74 @@ function cleanForFirestore<T>(data: T): T {
 }
 
 /**
+ * Sync and fetch cloud tombstones (deleted product IDs) - Read-only operation
+ */
+export async function syncCloudTombstones(): Promise<Set<string>> {
+  const localDeleted = getDeletedProductIds();
+  if (isQuotaDisabled()) return localDeleted;
+
+  try {
+    const tombstoneRef = doc(db, SETTINGS_COLLECTION, TOMBSTONES_DOC);
+    const snap = await getDoc(tombstoneRef);
+    let cloudDeletedList: string[] = [];
+    if (snap.exists()) {
+      cloudDeletedList = snap.data()?.deletedIds || [];
+    }
+
+    const mergedSet = new Set<string>([
+      ...Array.from(localDeleted),
+      ...cloudDeletedList,
+      ...Array.from(PERMANENTLY_REMOVED_PRODUCT_IDS),
+    ]);
+
+    // Save back merged list to local storage
+    mergedSet.forEach((id) => trackDeletedProductId(id));
+
+    return mergedSet;
+  } catch (err) {
+    if (isQuotaError(err)) markQuotaExceeded();
+    return localDeleted;
+  }
+}
+
+/**
+ * Record a deleted product ID in cloud tombstones
+ */
+export async function recordDeletedProductIdInCloud(productId: string): Promise<void> {
+  trackDeletedProductId(productId);
+  if (isQuotaDisabled()) return;
+  try {
+    const tombstoneRef = doc(db, SETTINGS_COLLECTION, TOMBSTONES_DOC);
+    const snap = await getDoc(tombstoneRef);
+    const existing = snap.exists() ? snap.data()?.deletedIds || [] : [];
+    const set = new Set<string>([...existing, productId]);
+    await setDoc(tombstoneRef, {
+      deletedIds: Array.from(set),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    if (isQuotaError(e)) markQuotaExceeded();
+  }
+}
+
+/**
  * Save or update a single product in Firestore immediately
  */
 export async function saveSingleProductToFirestore(prod: Product): Promise<void> {
-  if (isQuotaExceeded) return;
+  if (!prod || !prod.id) return;
+  if (isPermanentlyRemovedProduct(prod)) return;
+  if (isQuotaDisabled()) return;
   try {
     const docRef = doc(db, PRODUCTS_COLLECTION, prod.id);
     await setDoc(docRef, cleanForFirestore(prod));
     console.log('[Firestore] Single product saved to cloud:', prod.id);
   } catch (err) {
     if (isQuotaError(err)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
+      console.warn('[Firestore] Quota notice: Changes safely stored in offline local storage.');
+    } else {
+      console.warn('[Firestore] Single product save notice:', err);
     }
-    console.warn('[Firestore] Single product save notice:', err);
   }
 }
 
@@ -71,16 +187,20 @@ export async function saveSingleProductToFirestore(prod: Product): Promise<void>
  * Delete a single product from Firestore immediately
  */
 export async function deleteProductFromFirestore(productId: string): Promise<void> {
-  if (isQuotaExceeded) return;
+  trackDeletedProductId(productId);
+  recordDeletedProductIdInCloud(productId).catch(() => {});
+  if (isQuotaDisabled()) return;
   try {
     const docRef = doc(db, PRODUCTS_COLLECTION, productId);
     await deleteDoc(docRef);
     console.log('[Firestore] Product deleted from cloud:', productId);
   } catch (err) {
     if (isQuotaError(err)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
+      console.warn('[Firestore] Quota notice: Product deleted locally.');
+    } else {
+      console.warn('[Firestore] Product delete notice:', err);
     }
-    console.warn('[Firestore] Product delete notice:', err);
   }
 }
 
@@ -88,21 +208,25 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
  * Save all products to Firestore in safe chunked batches
  */
 export async function saveProductsToFirestore(products: Product[]): Promise<void> {
-  if (isQuotaExceeded) {
-    // If daily quota is exceeded, data is safely saved in localStorage
+  if (isQuotaDisabled()) {
     return;
   }
+
+  const deletedSet = getDeletedProductIds();
+  const validProducts = products.filter(
+    (p) => p && p.id && !deletedSet.has(p.id) && !isPermanentlyRemovedProduct(p)
+  );
 
   try {
     // 1. Fetch current cloud product IDs to know what to delete
     const snapshot = await getDocs(collection(db, PRODUCTS_COLLECTION));
     const currentCloudIds = new Set(snapshot.docs.map((d) => d.id));
-    const newProductIds = new Set(products.map((p) => p.id));
+    const newProductIds = new Set(validProducts.map((p) => p.id));
 
     // Chunk writes in groups of 40 to avoid Firestore limits
     const CHUNK_SIZE = 40;
-    for (let i = 0; i < products.length; i += CHUNK_SIZE) {
-      const chunk = products.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < validProducts.length; i += CHUNK_SIZE) {
+      const chunk = validProducts.slice(i, i + CHUNK_SIZE);
       const batch = writeBatch(db);
       chunk.forEach((prod) => {
         const docRef = doc(db, PRODUCTS_COLLECTION, prod.id);
@@ -111,8 +235,10 @@ export async function saveProductsToFirestore(products: Product[]): Promise<void
       await batch.commit();
     }
 
-    // Delete products that no longer exist
-    const toDelete = Array.from(currentCloudIds).filter((id) => !newProductIds.has(id));
+    // Delete products that no longer exist or are marked as deleted
+    const toDelete = Array.from(currentCloudIds).filter(
+      (id) => !newProductIds.has(id) || deletedSet.has(id)
+    );
     for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
       const chunk = toDelete.slice(i, i + CHUNK_SIZE);
       const batch = writeBatch(db);
@@ -126,7 +252,7 @@ export async function saveProductsToFirestore(products: Product[]): Promise<void
     console.log('[Firestore] Successfully synced products to cloud');
   } catch (error) {
     if (isQuotaError(error)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
       console.warn('[Firestore] Quota limit reached; continuing with persistent local storage mode.');
       return;
     }
@@ -134,14 +260,14 @@ export async function saveProductsToFirestore(products: Product[]): Promise<void
     // Fallback: save each product individually so one corrupt document doesn't fail everything
     try {
       await Promise.all(
-        products.map((prod) =>
+        validProducts.map((prod) =>
           setDoc(doc(db, PRODUCTS_COLLECTION, prod.id), cleanForFirestore(prod))
         )
       );
       console.log('[Firestore] Successfully synced products to cloud via individual setDoc');
     } catch (fallbackError) {
       if (isQuotaError(fallbackError)) {
-        isQuotaExceeded = true;
+        markQuotaExceeded();
       }
       console.warn('[Firestore] Fallback local storage active');
     }
@@ -152,7 +278,7 @@ export async function saveProductsToFirestore(products: Product[]): Promise<void
  * Save all categories to Firestore in safe chunked batches
  */
 export async function saveCategoriesToFirestore(categories: Category[]): Promise<void> {
-  if (isQuotaExceeded) return;
+  if (isQuotaDisabled()) return;
 
   try {
     const snapshot = await getDocs(collection(db, CATEGORIES_COLLECTION));
@@ -184,7 +310,7 @@ export async function saveCategoriesToFirestore(categories: Category[]): Promise
     console.log('[Firestore] Successfully synced categories to cloud');
   } catch (error) {
     if (isQuotaError(error)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
       console.warn('[Firestore] Quota limit reached; continuing with local storage mode.');
       return;
     }
@@ -198,7 +324,7 @@ export async function saveCategoriesToFirestore(categories: Category[]): Promise
       console.log('[Firestore] Successfully synced categories to cloud via individual setDoc');
     } catch (fallbackError) {
       if (isQuotaError(fallbackError)) {
-        isQuotaExceeded = true;
+        markQuotaExceeded();
       }
       console.warn('[Firestore] Fallback local storage active for categories');
     }
@@ -209,7 +335,7 @@ export async function saveCategoriesToFirestore(categories: Category[]): Promise
  * Save global site settings to Firestore
  */
 export async function saveSiteSettingsToFirestore(settings: SiteSettings): Promise<void> {
-  if (isQuotaExceeded) return;
+  if (isQuotaDisabled()) return;
 
   try {
     const docRef = doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC);
@@ -217,7 +343,7 @@ export async function saveSiteSettingsToFirestore(settings: SiteSettings): Promi
     console.log('[Firestore] Successfully synced site settings to cloud');
   } catch (error) {
     if (isQuotaError(error)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
       console.warn('[Firestore] Quota reached for settings, saved to local storage.');
       return;
     }
@@ -236,7 +362,7 @@ export function subscribeToFirestoreData(
   }) => void,
   onError?: (err: unknown) => void
 ): () => void {
-  if (isQuotaExceeded) {
+  if (isQuotaDisabled()) {
     return () => {};
   }
 
@@ -248,16 +374,22 @@ export function subscribeToFirestoreData(
       collection(db, PRODUCTS_COLLECTION),
       (snapshot) => {
         if (!snapshot.empty) {
+          const deletedSet = getDeletedProductIds();
           const prods: Product[] = [];
           snapshot.forEach((docSnap) => {
-            prods.push(docSnap.data() as Product);
+            const data = docSnap.data() as Product;
+            if (data && data.id) {
+              if (!deletedSet.has(data.id) && !isPermanentlyRemovedProduct(data)) {
+                prods.push(data);
+              }
+            }
           });
           onUpdate({ products: prods });
         }
       },
       (err) => {
         if (isQuotaError(err)) {
-          isQuotaExceeded = true;
+          markQuotaExceeded();
           console.warn('[Firestore] Daily quota limit reached; switched to persistent offline local mode.');
         } else {
           console.warn('[Firestore] Products subscription notice:', err);
@@ -281,7 +413,7 @@ export function subscribeToFirestoreData(
       },
       (err) => {
         if (isQuotaError(err)) {
-          isQuotaExceeded = true;
+          markQuotaExceeded();
         }
         console.warn('[Firestore] Categories subscription notice:', err);
         if (onError) onError(err);
@@ -299,7 +431,7 @@ export function subscribeToFirestoreData(
       },
       (err) => {
         if (isQuotaError(err)) {
-          isQuotaExceeded = true;
+          markQuotaExceeded();
         }
         console.warn('[Firestore] Site settings subscription notice:', err);
         if (onError) onError(err);
@@ -308,7 +440,7 @@ export function subscribeToFirestoreData(
     unsubscribers.push(unsubSettings);
   } catch (err) {
     if (isQuotaError(err)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
     }
     console.warn('[Firestore] Subscription init notice:', err);
     if (onError) onError(err);
@@ -320,7 +452,7 @@ export function subscribeToFirestoreData(
 }
 
 /**
- * Initial cloud seed: If cloud database is empty, seed from current local state or mock data
+ * Initial cloud data fetch: Safely reads cloud state without performing unsolicited writes
  */
 export async function initializeCloudDatabaseIfEmpty(
   localProducts: Product[],
@@ -331,7 +463,7 @@ export async function initializeCloudDatabaseIfEmpty(
   categories: Category[];
   siteSettings: SiteSettings;
 }> {
-  if (isQuotaExceeded) {
+  if (isQuotaDisabled()) {
     return {
       products: localProducts?.length > 0 ? localProducts : INITIAL_PRODUCTS,
       categories: localCategories?.length > 0 ? localCategories : INITIAL_CATEGORIES,
@@ -340,28 +472,35 @@ export async function initializeCloudDatabaseIfEmpty(
   }
 
   try {
+    // 0. Sync tombstones first (read-only)
+    const deletedSet = await syncCloudTombstones();
+
     // Check if products exist in cloud
     const productsSnap = await getDocs(collection(db, PRODUCTS_COLLECTION));
     let cloudProducts: Product[] = [];
 
     if (productsSnap.empty) {
-      console.log('[Firestore] Initializing cloud products from local storage...');
-      const seedProducts = localProducts?.length > 0 ? localProducts : INITIAL_PRODUCTS;
-      await saveProductsToFirestore(seedProducts);
-      cloudProducts = seedProducts;
+      cloudProducts = (localProducts?.length > 0 ? localProducts : INITIAL_PRODUCTS).filter(
+        (p) => p && p.id && !deletedSet.has(p.id) && !isPermanentlyRemovedProduct(p)
+      );
     } else {
       productsSnap.forEach((docSnap) => {
-        cloudProducts.push(docSnap.data() as Product);
+        const prod = docSnap.data() as Product;
+        if (prod && prod.id) {
+          if (!deletedSet.has(prod.id) && !isPermanentlyRemovedProduct(prod)) {
+            cloudProducts.push(prod);
+          }
+        }
       });
 
-      // Merge: If local storage has any newly added products not yet in cloud, upload and keep them
+      // Merge: If local storage has any products not yet in cloud, include them in memory
       if (localProducts && localProducts.length > 0) {
         const cloudIdSet = new Set(cloudProducts.map((p) => p.id));
-        const localNew = localProducts.filter((p) => !cloudIdSet.has(p.id));
+        const localNew = localProducts.filter(
+          (p) => p && p.id && !cloudIdSet.has(p.id) && !deletedSet.has(p.id) && !isPermanentlyRemovedProduct(p)
+        );
         if (localNew.length > 0) {
-          console.log('[Firestore] Preserving and uploading local products to cloud:', localNew.length);
           cloudProducts = [...localNew, ...cloudProducts];
-          await saveProductsToFirestore(cloudProducts);
         }
       }
     }
@@ -371,23 +510,18 @@ export async function initializeCloudDatabaseIfEmpty(
     let cloudCategories: Category[] = [];
 
     if (categoriesSnap.empty) {
-      console.log('[Firestore] Initializing cloud categories from local storage...');
-      const seedCategories = localCategories?.length > 0 ? localCategories : INITIAL_CATEGORIES;
-      await saveCategoriesToFirestore(seedCategories);
-      cloudCategories = seedCategories;
+      cloudCategories = localCategories?.length > 0 ? localCategories : INITIAL_CATEGORIES;
     } else {
       categoriesSnap.forEach((docSnap) => {
         cloudCategories.push(docSnap.data() as Category);
       });
 
-      // Merge: If local storage has custom categories not yet in cloud, preserve them
+      // Merge: If local storage has custom categories not yet in cloud, preserve them in memory
       if (localCategories && localCategories.length > 0) {
         const cloudCatIdSet = new Set(cloudCategories.map((c) => c.id));
         const localCatNew = localCategories.filter((c) => !cloudCatIdSet.has(c.id));
         if (localCatNew.length > 0) {
-          console.log('[Firestore] Preserving and uploading local categories to cloud:', localCatNew.length);
           cloudCategories = [...cloudCategories, ...localCatNew];
-          await saveCategoriesToFirestore(cloudCategories);
         }
       }
     }
@@ -397,10 +531,7 @@ export async function initializeCloudDatabaseIfEmpty(
     let cloudSettings: SiteSettings;
 
     if (!settingsSnap.exists()) {
-      console.log('[Firestore] Initializing cloud site settings from local storage...');
-      const seedSettings = localSettings?.companyName ? localSettings : INITIAL_SITE_SETTINGS;
-      await saveSiteSettingsToFirestore(seedSettings);
-      cloudSettings = seedSettings;
+      cloudSettings = localSettings?.companyName ? localSettings : INITIAL_SITE_SETTINGS;
     } else {
       cloudSettings = settingsSnap.data() as SiteSettings;
     }
@@ -412,7 +543,7 @@ export async function initializeCloudDatabaseIfEmpty(
     };
   } catch (error) {
     if (isQuotaError(error)) {
-      isQuotaExceeded = true;
+      markQuotaExceeded();
       console.warn('[Firestore] Free daily quota reached; seamlessly serving all products and edits from local storage.');
     } else {
       console.warn('[Firestore] Initialization notice (using local storage):', error);

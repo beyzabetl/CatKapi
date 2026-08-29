@@ -36,13 +36,18 @@ export const HomeShowcase: React.FC<HomeShowcaseProps> = ({
   // Extract unique category names for filter pills
   const categoryPills = useMemo(() => {
     const set = new Set<string>();
+    (categories || []).forEach((c) => {
+      if (c && c.name && c.isActive !== false) {
+        set.add(c.name.trim());
+      }
+    });
     activeProducts.forEach((p) => {
       if (p.category && p.category.trim()) {
         set.add(p.category.trim());
       }
     });
     return Array.from(set);
-  }, [activeProducts]);
+  }, [categories, activeProducts]);
 
   // Filtered by selected category pill
   const displayedProducts = useMemo(() => {

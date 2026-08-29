@@ -36,6 +36,40 @@ export const PERMANENTLY_REMOVED_NAMES = new Set<string>([
   '32. Sınıf Derzli Meşe Laminat Parke',
 ]);
 
+const BANNED_PATTERNS = [
+  'portal luks vestiyer',
+  'saten lake asma banyo',
+  'montessori masal',
+  'saray dugun paketi',
+  'loft genc odasi',
+  'provence shaker',
+  'boutique led kahve',
+  'executive luks mudur',
+  'mimar kesifli ozel olcu',
+  'verona arka panelli',
+  '32 sinif derzli',
+  'laminat parke',
+];
+
+export function isPermanentlyRemovedProduct(p?: Product | null): boolean {
+  if (!p || !p.id) return true;
+  if (PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id)) return true;
+
+  const rawName = (p.name || '').trim();
+  if (PERMANENTLY_REMOVED_NAMES.has(rawName)) return true;
+
+  // Normalized Turkish string
+  const norm = rawName
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return BANNED_PATTERNS.some((pat) => norm.includes(pat));
+}
+
 // Track deleted product IDs to prevent ghost restoration from cloud snapshots
 export function trackDeletedProductId(id: string): void {
   try {
@@ -262,8 +296,7 @@ export async function loadPersistedData(): Promise<{
         p &&
         p.id &&
         !deletedSet.has(p.id) &&
-        !PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id) &&
-        !PERMANENTLY_REMOVED_NAMES.has(p.name?.trim())
+        !isPermanentlyRemovedProduct(p)
     );
     return filtered.length > 0 ? filtered : INITIAL_PRODUCTS;
   };

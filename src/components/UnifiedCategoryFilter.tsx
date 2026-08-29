@@ -1,8 +1,10 @@
 import React from 'react';
 import { Filter, Search, RotateCcw, Sparkles } from 'lucide-react';
 import { INITIAL_CATEGORIES } from '../data/mockData';
+import { Category } from '../types';
 
 interface UnifiedCategoryFilterProps {
+  categories?: Category[];
   selectedMainCategory: string | null;
   setSelectedMainCategory: (cat: string | null) => void;
   selectedSubCategory: string | null;
@@ -13,6 +15,7 @@ interface UnifiedCategoryFilterProps {
 }
 
 export const UnifiedCategoryFilter: React.FC<UnifiedCategoryFilterProps> = ({
+  categories: propCategories,
   selectedMainCategory,
   setSelectedMainCategory,
   selectedSubCategory,
@@ -21,10 +24,11 @@ export const UnifiedCategoryFilter: React.FC<UnifiedCategoryFilterProps> = ({
   setSearchQuery,
   totalCount,
 }) => {
-  const categories = INITIAL_CATEGORIES.filter((c) => c.isActive !== false);
+  const allCategories = (propCategories && propCategories.length > 0 ? propCategories : INITIAL_CATEGORIES);
+  const categories = allCategories.filter((c) => c.isActive !== false);
 
   const activeCategoryObj = categories.find(
-    (c) => c.name.toLowerCase() === (selectedMainCategory || '').toLowerCase()
+    (c) => (c.name || '').trim().toLowerCase() === (selectedMainCategory || '').trim().toLowerCase()
   );
 
   const handleClearFilters = () => {

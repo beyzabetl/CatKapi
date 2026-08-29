@@ -25,6 +25,7 @@ import {
   subscribeToFirestoreData,
   initializeCloudDatabaseIfEmpty,
   deleteProductFromFirestore,
+  syncCloudTombstones,
 } from './services/firestoreSync';
 import {
   persistProducts,
@@ -32,6 +33,7 @@ import {
   persistSiteSettings,
   loadPersistedData,
   getDeletedProductIds,
+  isPermanentlyRemovedProduct,
   PERMANENTLY_REMOVED_PRODUCT_IDS,
   PERMANENTLY_REMOVED_NAMES,
 } from './services/storageManager';
@@ -47,8 +49,7 @@ export default function App() {
         p &&
         p.id &&
         !deletedSet.has(p.id) &&
-        !PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id) &&
-        !PERMANENTLY_REMOVED_NAMES.has(p.name?.trim())
+        !isPermanentlyRemovedProduct(p)
     );
   };
 
@@ -104,8 +105,7 @@ export default function App() {
       const isAllowed = (p: Product) => {
         if (!p || !p.id) return false;
         if (deletedSet.has(p.id)) return false;
-        if (PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id)) return false;
-        if (p.name && PERMANENTLY_REMOVED_NAMES.has(p.name.trim())) return false;
+        if (isPermanentlyRemovedProduct(p)) return false;
         return true;
       };
 
@@ -189,12 +189,7 @@ export default function App() {
       })
       .catch((e) => console.warn('[Storage] Load error:', e));
 
-    // 3. Purge any permanently removed legacy products from cloud if they exist
-    PERMANENTLY_REMOVED_PRODUCT_IDS.forEach((id) => {
-      deleteProductFromFirestore(id).catch(() => {});
-    });
-
-    // 4. Subscribe to live Firestore updates across all devices
+    // 3. Subscribe to live Firestore updates across all devices
     const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
       if (!isMounted) return;
 
