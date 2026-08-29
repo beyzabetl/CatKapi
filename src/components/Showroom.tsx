@@ -29,6 +29,7 @@ export const Showroom: React.FC<ShowroomProps> = ({
 
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
+      if (!item || !item.id) return false;
       if (item.isHidden === true) return false;
 
       // Main Category Match
@@ -50,7 +51,16 @@ export const Showroom: React.FC<ShowroomProps> = ({
           ].filter(Boolean)
         );
 
-        if (!validCatSet.has(itemCat)) {
+        const matchesMain =
+          validCatSet.has(itemCat) ||
+          (itemCat && selCat && (itemCat.includes(selCat) || selCat.includes(itemCat))) ||
+          (matchedCategoryObj?.subCategories || []).some(
+            (sub) =>
+              sub.name.trim().toLocaleLowerCase('tr-TR') === itemCat ||
+              sub.id.trim().toLocaleLowerCase('tr-TR') === itemCat
+          );
+
+        if (!matchesMain) {
           return false;
         }
 
@@ -73,7 +83,12 @@ export const Showroom: React.FC<ShowroomProps> = ({
             ].filter(Boolean)
           );
 
-          if (!validSubSet.has(itemSub)) {
+          const matchesSub =
+            validSubSet.has(itemSub) ||
+            validSubSet.has(itemCat) ||
+            (itemSub && selSub && (itemSub.includes(selSub) || selSub.includes(itemSub)));
+
+          if (!matchesSub) {
             return false;
           }
         }

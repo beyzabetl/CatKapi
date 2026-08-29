@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Corporate } from './components/Corporate';
+import { HomeShowcase } from './components/HomeShowcase';
 import { Showroom } from './components/Showroom';
 import { CustomProduction } from './components/CustomProduction';
 import { ContactSection } from './components/ContactSection';
@@ -307,6 +308,15 @@ export default function App() {
               onDiscoverShowroom={() => handleTabChange('products')}
               onOpenCustomProduction={() => handleTabChange('custom-production')}
               onNavigateTab={handleTabChange}
+            />
+
+            {/* Vitrin & Atölyeden Yeni Çıkan Modeller (Showcase of all products) */}
+            <HomeShowcase
+              products={products}
+              categories={categories}
+              onSelectProductDetail={(product) => setSelectedProductDetail(product)}
+              onDiscoverAll={() => handleTabChange('products')}
+              onOpenCustomProduction={() => handleTabChange('custom-production')}
             />
 
             {/* Corporate Profile & Values (Mersin'in Lokal Değeri Kartı) */}
