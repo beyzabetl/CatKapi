@@ -4,6 +4,7 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  deleteDoc,
   writeBatch,
   onSnapshot,
   Unsubscribe,
@@ -47,6 +48,40 @@ function isQuotaError(err: unknown): boolean {
  */
 function cleanForFirestore<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
+}
+
+/**
+ * Save or update a single product in Firestore immediately
+ */
+export async function saveSingleProductToFirestore(prod: Product): Promise<void> {
+  if (isQuotaExceeded) return;
+  try {
+    const docRef = doc(db, PRODUCTS_COLLECTION, prod.id);
+    await setDoc(docRef, cleanForFirestore(prod));
+    console.log('[Firestore] Single product saved to cloud:', prod.id);
+  } catch (err) {
+    if (isQuotaError(err)) {
+      isQuotaExceeded = true;
+    }
+    console.warn('[Firestore] Single product save notice:', err);
+  }
+}
+
+/**
+ * Delete a single product from Firestore immediately
+ */
+export async function deleteProductFromFirestore(productId: string): Promise<void> {
+  if (isQuotaExceeded) return;
+  try {
+    const docRef = doc(db, PRODUCTS_COLLECTION, productId);
+    await deleteDoc(docRef);
+    console.log('[Firestore] Product deleted from cloud:', productId);
+  } catch (err) {
+    if (isQuotaError(err)) {
+      isQuotaExceeded = true;
+    }
+    console.warn('[Firestore] Product delete notice:', err);
+  }
 }
 
 /**

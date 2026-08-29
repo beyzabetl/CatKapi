@@ -197,7 +197,7 @@ Bu ürün hakkında detaylı bilgi ve Mersin adresime yerinde ölçü randevusu 
                   >
                     {/* Category Chip Top Left */}
                     <span className="absolute top-3 left-3 z-10 px-3 py-1 bg-black/85 backdrop-blur text-stone-200 text-[10px] font-mono font-black uppercase tracking-wider rounded-md border border-stone-700">
-                      {product.category.toUpperCase()}
+                      {(product.category || 'MOBİLYA').toUpperCase()}
                     </span>
 
                     {/* Photo Count Top Right */}

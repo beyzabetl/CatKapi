@@ -6,6 +6,28 @@ const DB_VERSION = 1;
 const STORE_PRODUCTS = 'products';
 const STORE_CATEGORIES = 'categories';
 const STORE_SETTINGS = 'site_settings';
+const DELETED_PRODUCTS_KEY = 'catkapi_deleted_product_ids';
+
+// Track deleted product IDs to prevent ghost restoration from cloud snapshots
+export function trackDeletedProductId(id: string): void {
+  try {
+    const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
+    const set = new Set<string>(raw ? JSON.parse(raw) : []);
+    set.add(id);
+    localStorage.setItem(DELETED_PRODUCTS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('[Storage] trackDeletedProductId error:', e);
+  }
+}
+
+export function getDeletedProductIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
+    return new Set<string>(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set<string>();
+  }
+}
 
 // Open IndexedDB safely with fallback
 function openIndexedDb(): Promise<IDBDatabase> {
@@ -41,7 +63,9 @@ function openIndexedDb(): Promise<IDBDatabase> {
 export async function persistProducts(products: Product[]): Promise<void> {
   // 1. Save to LocalStorage
   try {
-    localStorage.setItem('catkapi_products', JSON.stringify(products));
+    const serialized = JSON.stringify(products);
+    localStorage.setItem('catkapi_products_v1', serialized);
+    localStorage.setItem('catkapi_products', serialized);
   } catch (err) {
     console.warn('[Storage] LocalStorage full or blocked for products, saving to IndexedDB');
   }
@@ -65,7 +89,9 @@ export async function persistProducts(products: Product[]): Promise<void> {
  */
 export async function persistCategories(categories: Category[]): Promise<void> {
   try {
-    localStorage.setItem('catkapi_categories', JSON.stringify(categories));
+    const serialized = JSON.stringify(categories);
+    localStorage.setItem('catkapi_categories_v1', serialized);
+    localStorage.setItem('catkapi_categories', serialized);
   } catch (err) {
     console.warn('[Storage] LocalStorage full for categories');
   }
@@ -88,7 +114,9 @@ export async function persistCategories(categories: Category[]): Promise<void> {
  */
 export async function persistSiteSettings(settings: SiteSettings): Promise<void> {
   try {
-    localStorage.setItem('catkapi_site_settings', JSON.stringify(settings));
+    const serialized = JSON.stringify(settings);
+    localStorage.setItem('catkapi_site_settings_v1', serialized);
+    localStorage.setItem('catkapi_site_settings', serialized);
   } catch (err) {
     console.warn('[Storage] LocalStorage full for settings');
   }
@@ -164,7 +192,7 @@ export async function loadPersistedData(): Promise<{
   // 2. Fallback to LocalStorage if IndexedDB was empty
   if (!products || products.length === 0) {
     try {
-      const localP = localStorage.getItem('catkapi_products');
+      const localP = localStorage.getItem('catkapi_products_v1') || localStorage.getItem('catkapi_products');
       if (localP) {
         products = JSON.parse(localP);
       }
@@ -175,7 +203,7 @@ export async function loadPersistedData(): Promise<{
 
   if (!categories || categories.length === 0) {
     try {
-      const localC = localStorage.getItem('catkapi_categories');
+      const localC = localStorage.getItem('catkapi_categories_v1') || localStorage.getItem('catkapi_categories');
       if (localC) {
         categories = JSON.parse(localC);
       }
@@ -186,7 +214,7 @@ export async function loadPersistedData(): Promise<{
 
   if (!siteSettings || !siteSettings.companyName) {
     try {
-      const localS = localStorage.getItem('catkapi_site_settings');
+      const localS = localStorage.getItem('catkapi_site_settings_v1') || localStorage.getItem('catkapi_site_settings');
       if (localS) {
         siteSettings = JSON.parse(localS);
       }

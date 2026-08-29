@@ -29,6 +29,7 @@ import {
   persistCategories,
   persistSiteSettings,
   loadPersistedData,
+  getDeletedProductIds,
 } from './services/storageManager';
 
 export default function App() {
@@ -72,57 +73,107 @@ export default function App() {
 
   // IndexedDB & Cloud Database Sync on initial load
   useEffect(() => {
-    // 1. Load large-scale persistent storage (IndexedDB)
+    let isMounted = true;
+
+    // Helper to safely merge local and cloud products without losing user-added products
+    const mergeSafeProducts = (localList: Product[], cloudList: Product[]): Product[] => {
+      const deletedSet = getDeletedProductIds();
+      const map = new Map<string, Product>();
+
+      // 1. Put cloud products
+      (cloudList || []).forEach((p) => {
+        if (p && p.id && !deletedSet.has(p.id)) {
+          map.set(p.id, p);
+        }
+      });
+
+      // 2. Put local products (preserving all user creations)
+      (localList || []).forEach((p) => {
+        if (p && p.id && !deletedSet.has(p.id)) {
+          map.set(p.id, p);
+        }
+      });
+
+      return Array.from(map.values());
+    };
+
+    // Helper to safely merge categories
+    const mergeSafeCategories = (localCats: Category[], cloudCats: Category[]): Category[] => {
+      const map = new Map<string, Category>();
+      (cloudCats || []).forEach((c) => {
+        if (c && c.id) map.set(c.id, c);
+      });
+      (localCats || []).forEach((c) => {
+        if (c && c.id) map.set(c.id, c);
+      });
+      return Array.from(map.values());
+    };
+
+    // 1. First Load large-scale persistent storage (IndexedDB)
     loadPersistedData()
-      .then((persisted) => {
+      .then(async (persisted) => {
+        if (!isMounted) return;
+
+        let activeProducts = products;
+        let activeCategories = categories;
+        let activeSettings = siteSettings;
+
         if (persisted.products && persisted.products.length > 0) {
-          setProducts(persisted.products);
+          activeProducts = persisted.products;
+          setProducts(activeProducts);
         }
         if (persisted.categories && persisted.categories.length > 0) {
-          setCategories(persisted.categories);
+          activeCategories = persisted.categories;
+          setCategories(activeCategories);
         }
         if (persisted.siteSettings && persisted.siteSettings.companyName) {
-          setSiteSettings(persisted.siteSettings);
+          activeSettings = persisted.siteSettings;
+          setSiteSettings(activeSettings);
+        }
+
+        // 2. Initialize or fetch cloud database and merge safely
+        try {
+          const cloudData = await initializeCloudDatabaseIfEmpty(activeProducts, activeCategories, activeSettings);
+          if (!isMounted) return;
+
+          if (cloudData.products && cloudData.products.length > 0) {
+            setProducts((prev) => {
+              const combined = mergeSafeProducts(prev, cloudData.products);
+              persistProducts(combined);
+              return combined;
+            });
+          }
+          if (cloudData.categories && cloudData.categories.length > 0) {
+            setCategories((prev) => {
+              const combinedCats = mergeSafeCategories(prev, cloudData.categories);
+              persistCategories(combinedCats);
+              return combinedCats;
+            });
+          }
+          if (cloudData.siteSettings && cloudData.siteSettings.companyName) {
+            setSiteSettings(cloudData.siteSettings);
+            persistSiteSettings(cloudData.siteSettings);
+          }
+        } catch (err) {
+          console.warn('[Firestore] Cloud init notice:', err);
         }
       })
       .catch((e) => console.warn('[Storage] Load error:', e));
 
-    // 2. Initialize cloud database if available
-    initializeCloudDatabaseIfEmpty(products, categories, siteSettings)
-      .then((cloudData) => {
-        if (cloudData.products && cloudData.products.length > 0) {
-          setProducts(cloudData.products);
-          persistProducts(cloudData.products);
-        }
-        if (cloudData.categories && cloudData.categories.length > 0) {
-          setCategories(cloudData.categories);
-          persistCategories(cloudData.categories);
-        }
-        if (cloudData.siteSettings && cloudData.siteSettings.companyName) {
-          setSiteSettings(cloudData.siteSettings);
-          persistSiteSettings(cloudData.siteSettings);
-        }
-      })
-      .catch((err) => {
-        console.warn('[Firestore] Cloud init notice:', err);
-      });
-
     // 3. Subscribe to live Firestore updates across all devices
     const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
+      if (!isMounted) return;
+
       if (newProds && newProds.length > 0) {
         setProducts((prev) => {
-          const cloudMap = new Map(newProds.map((p) => [p.id, p]));
-          const unsaved = prev.filter((p) => !cloudMap.has(p.id));
-          const combined = unsaved.length > 0 ? [...newProds, ...unsaved] : newProds;
+          const combined = mergeSafeProducts(prev, newProds);
           persistProducts(combined);
           return combined;
         });
       }
       if (newCats && newCats.length > 0) {
         setCategories((prev) => {
-          const cloudCatMap = new Map(newCats.map((c) => [c.id, c]));
-          const unsavedCats = prev.filter((c) => !cloudCatMap.has(c.id));
-          const combinedCats = unsavedCats.length > 0 ? [...newCats, ...unsavedCats] : newCats;
+          const combinedCats = mergeSafeCategories(prev, newCats);
           persistCategories(combinedCats);
           return combinedCats;
         });
@@ -134,6 +185,7 @@ export default function App() {
     });
 
     return () => {
+      isMounted = false;
       unsubscribe();
     };
   }, []);

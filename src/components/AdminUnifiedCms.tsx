@@ -60,7 +60,8 @@ import {
   SocialLink,
 } from '../types';
 import { MediaGalleryUploader } from './MediaGalleryUploader';
-import { exportDatabaseBackup, importDatabaseBackup } from '../services/storageManager';
+import { exportDatabaseBackup, importDatabaseBackup, trackDeletedProductId } from '../services/storageManager';
+import { deleteProductFromFirestore, saveSingleProductToFirestore } from '../services/firestoreSync';
 
 interface AdminUnifiedCmsProps {
   products: Product[];
@@ -312,13 +313,16 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
     }
 
     if (isCreatingNewProduct) {
-      onUpdateProducts([editingProduct, ...products]);
+      const nextProducts = [editingProduct, ...products];
+      onUpdateProducts(nextProducts);
+      saveSingleProductToFirestore(editingProduct).catch(console.warn);
       setIsCreatingNewProduct(false);
       setSelectedProductId(editingProduct.id);
       showToast(`'${editingProduct.name}' ürünü başarıyla eklendi ve sitede yayına alındı!`);
     } else {
       const updated = products.map((p) => (p.id === editingProduct.id ? editingProduct : p));
       onUpdateProducts(updated);
+      saveSingleProductToFirestore(editingProduct).catch(console.warn);
       showToast(`'${editingProduct.name}' ürün bilgileri güncellendi ve sitede yayına alındı!`);
     }
   };
@@ -334,12 +338,15 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
     }
 
     if (isCreatingNewProduct) {
-      onUpdateProducts([editingProduct, ...products]);
+      const nextProducts = [editingProduct, ...products];
+      onUpdateProducts(nextProducts);
+      saveSingleProductToFirestore(editingProduct).catch(console.warn);
       setIsCreatingNewProduct(false);
       setSelectedProductId(editingProduct.id);
     } else {
       const updated = products.map((p) => (p.id === editingProduct.id ? editingProduct : p));
       onUpdateProducts(updated);
+      saveSingleProductToFirestore(editingProduct).catch(console.warn);
     }
 
     showToast(`'${editingProduct.name}' kaydedildi! Showroom kataloğuna yönlendiriliyorsunuz...`);
@@ -352,11 +359,29 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
     }, 300);
   };
 
+  // Safe Close to ensure no created or edited product is ever discarded
+  const handleSafeClose = () => {
+    if (editingProduct && editingProduct.name && editingProduct.name.trim().length > 0) {
+      if (isCreatingNewProduct) {
+        onUpdateProducts([editingProduct, ...products]);
+        saveSingleProductToFirestore(editingProduct).catch(console.warn);
+        setIsCreatingNewProduct(false);
+      } else {
+        const updated = products.map((p) => (p.id === editingProduct.id ? editingProduct : p));
+        onUpdateProducts(updated);
+        saveSingleProductToFirestore(editingProduct).catch(console.warn);
+      }
+    }
+    onClose();
+  };
+
   // Delete Product
   const handleDeleteProduct = (id: string) => {
     const prod = products.find((p) => p.id === id);
     const prodName = prod?.name || 'Ürün';
     askConfirmation(`'${prodName}' ürününü silmek istediğinize emin misiniz?`, () => {
+      trackDeletedProductId(id);
+      deleteProductFromFirestore(id).catch(console.warn);
       const nextList = products.filter((p) => p.id !== id);
       onUpdateProducts(nextList);
       if (selectedProductId === id) {
@@ -1021,7 +1046,7 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
           </button>
 
           <button
-            onClick={onClose}
+            onClick={handleSafeClose}
             className="p-2 text-stone-400 hover:text-white hover:bg-stone-850 rounded-xl transition-colors cursor-pointer border border-stone-800 hidden sm:flex items-center justify-center"
             title="Oturumu Kapat"
           >
@@ -1029,7 +1054,7 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
           </button>
 
           <button
-            onClick={onClose}
+            onClick={handleSafeClose}
             className="p-2 text-stone-400 hover:text-white hover:bg-stone-800 rounded-xl transition-colors cursor-pointer ml-0.5"
             title="Paneli Kapat"
           >
@@ -1825,13 +1850,23 @@ export const AdminUnifiedCms: React.FC<AdminUnifiedCmsProps> = ({
                   </div>
 
                   {/* Bottom Action Footer (Matching Images 5 & 6) */}
-                  <div className="p-4 bg-[#141414] border-t border-stone-800 flex items-center justify-between gap-3 shrink-0">
+                  <div className="p-4 bg-[#141414] border-t border-stone-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
                     <button
                       type="submit"
-                      className="flex-1 py-3.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+                      className="flex-1 min-w-[200px] py-3.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Save size={16} />
                       <span>ÜRÜN BİLGİLERİNİ KAYDET</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveAndGoToShowroom}
+                      className="py-3.5 px-5 bg-stone-900 hover:bg-stone-800 text-amber-400 hover:text-amber-300 border border-amber-500/40 hover:border-amber-500 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                      title="Ürünü kaydeder ve doğrudan showroom sayfasında görüntüler"
+                    >
+                      <ExternalLink size={15} />
+                      <span>KAYDET VE SİTEDE GÖR</span>
                     </button>
 
                     {!isCreatingNewProduct && (
