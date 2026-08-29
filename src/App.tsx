@@ -23,6 +23,7 @@ import {
   saveSiteSettingsToFirestore,
   subscribeToFirestoreData,
   initializeCloudDatabaseIfEmpty,
+  deleteProductFromFirestore,
 } from './services/firestoreSync';
 import {
   persistProducts,
@@ -30,16 +31,35 @@ import {
   persistSiteSettings,
   loadPersistedData,
   getDeletedProductIds,
+  PERMANENTLY_REMOVED_PRODUCT_IDS,
+  PERMANENTLY_REMOVED_NAMES,
 } from './services/storageManager';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainTabType>('home');
 
+  // Helper to filter out any removed products
+  const filterActiveProducts = (list: Product[]): Product[] => {
+    const deletedSet = getDeletedProductIds();
+    return (list || []).filter(
+      (p) =>
+        p &&
+        p.id &&
+        !deletedSet.has(p.id) &&
+        !PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id) &&
+        !PERMANENTLY_REMOVED_NAMES.has(p.name?.trim())
+    );
+  };
+
   // Persistence for products, categories, siteSettings
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem('catkapi_products_v1') || localStorage.getItem('catkapi_products');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const filtered = filterActiveProducts(parsed);
+        if (filtered.length > 0) return filtered;
+      }
     } catch (e) {
       console.error(e);
     }
@@ -80,16 +100,24 @@ export default function App() {
       const deletedSet = getDeletedProductIds();
       const map = new Map<string, Product>();
 
+      const isAllowed = (p: Product) => {
+        if (!p || !p.id) return false;
+        if (deletedSet.has(p.id)) return false;
+        if (PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id)) return false;
+        if (p.name && PERMANENTLY_REMOVED_NAMES.has(p.name.trim())) return false;
+        return true;
+      };
+
       // 1. Put cloud products
       (cloudList || []).forEach((p) => {
-        if (p && p.id && !deletedSet.has(p.id)) {
+        if (isAllowed(p)) {
           map.set(p.id, p);
         }
       });
 
       // 2. Put local products (preserving all user creations)
       (localList || []).forEach((p) => {
-        if (p && p.id && !deletedSet.has(p.id)) {
+        if (isAllowed(p)) {
           map.set(p.id, p);
         }
       });
@@ -160,7 +188,12 @@ export default function App() {
       })
       .catch((e) => console.warn('[Storage] Load error:', e));
 
-    // 3. Subscribe to live Firestore updates across all devices
+    // 3. Purge any permanently removed legacy products from cloud if they exist
+    PERMANENTLY_REMOVED_PRODUCT_IDS.forEach((id) => {
+      deleteProductFromFirestore(id).catch(() => {});
+    });
+
+    // 4. Subscribe to live Firestore updates across all devices
     const unsubscribe = subscribeToFirestoreData(({ products: newProds, categories: newCats, siteSettings: newSettings }) => {
       if (!isMounted) return;
 

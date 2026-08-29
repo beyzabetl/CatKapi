@@ -8,12 +8,41 @@ const STORE_CATEGORIES = 'categories';
 const STORE_SETTINGS = 'site_settings';
 const DELETED_PRODUCTS_KEY = 'catkapi_deleted_product_ids';
 
+export const PERMANENTLY_REMOVED_PRODUCT_IDS = new Set<string>([
+  'prod-antre-1',
+  'prod-banyo-1',
+  'prod-cocuk-1',
+  'prod-dugun-1',
+  'prod-genc-1',
+  'prod-mutfak-1',
+  'prod-mutfak-kahve',
+  'prod-ofis-1',
+  'prod-ozel-1',
+  'prod-salon-1',
+  'prod-yapi-1',
+]);
+
+export const PERMANENTLY_REMOVED_NAMES = new Set<string>([
+  'Portal Lüks Vestiyer & Oturma Puflu Portmanto',
+  'Saten Lake Asma Banyo Dolabı & Çanak Lavabo',
+  'Montessori Masal Çocuk Odası',
+  'Lüks Saray Düğün Paketi (Komple Ev Seti)',
+  'Loft Genç Odası Takımı',
+  'Provence Shaker Ada Mutfak Dolabı',
+  'Boutique LED Kahve Köşesi Ünitesi',
+  'Executive Lüks Müdür Çalışma Masası',
+  'Mimar Keşifli Özel Ölçü Gömme Mutfak & Gardırop Projesi',
+  'Verona Arka Panelli Lüks TV Ünitesi',
+  '32. Sınıf Derzli Meşe Laminat Parke',
+]);
+
 // Track deleted product IDs to prevent ghost restoration from cloud snapshots
 export function trackDeletedProductId(id: string): void {
   try {
     const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
     const set = new Set<string>(raw ? JSON.parse(raw) : []);
     set.add(id);
+    PERMANENTLY_REMOVED_PRODUCT_IDS.forEach((removedId) => set.add(removedId));
     localStorage.setItem(DELETED_PRODUCTS_KEY, JSON.stringify(Array.from(set)));
   } catch (e) {
     console.warn('[Storage] trackDeletedProductId error:', e);
@@ -23,9 +52,11 @@ export function trackDeletedProductId(id: string): void {
 export function getDeletedProductIds(): Set<string> {
   try {
     const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
-    return new Set<string>(raw ? JSON.parse(raw) : []);
+    const set = new Set<string>(raw ? JSON.parse(raw) : []);
+    PERMANENTLY_REMOVED_PRODUCT_IDS.forEach((removedId) => set.add(removedId));
+    return set;
   } catch {
-    return new Set<string>();
+    return new Set<string>(PERMANENTLY_REMOVED_PRODUCT_IDS);
   }
 }
 
@@ -223,8 +254,24 @@ export async function loadPersistedData(): Promise<{
     }
   }
 
+  const deletedSet = getDeletedProductIds();
+  const sanitizeProducts = (list: Product[] | null): Product[] => {
+    if (!list || list.length === 0) return INITIAL_PRODUCTS;
+    const filtered = list.filter(
+      (p) =>
+        p &&
+        p.id &&
+        !deletedSet.has(p.id) &&
+        !PERMANENTLY_REMOVED_PRODUCT_IDS.has(p.id) &&
+        !PERMANENTLY_REMOVED_NAMES.has(p.name?.trim())
+    );
+    return filtered.length > 0 ? filtered : INITIAL_PRODUCTS;
+  };
+
+  const finalProducts = sanitizeProducts(products);
+
   return {
-    products: products && products.length > 0 ? products : INITIAL_PRODUCTS,
+    products: finalProducts,
     categories: categories && categories.length > 0 ? categories : INITIAL_CATEGORIES,
     siteSettings: siteSettings && siteSettings.companyName ? siteSettings : INITIAL_SITE_SETTINGS,
   };
